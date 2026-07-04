@@ -33,3 +33,16 @@ export const useLayoutStore = create<State>()(
     { name: "ytm-layout" },
   ),
 );
+
+// The main and floating-player windows are separate JS contexts that share
+// the `ytm-layout` localStorage key. Without cross-window sync, a change in
+// one (e.g. the floating window toggling `floatingPinned`) is invisible to
+// the other, whose next `setMode` then clobbers it with a stale value. The
+// `storage` event fires in the OTHER window on write, so re-hydrate from it.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "ytm-layout") {
+      void useLayoutStore.persist.rehydrate();
+    }
+  });
+}

@@ -80,6 +80,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   // after the queue is cleared. The mode itself stays the same; the
   // player just reappears in the chosen slot once a track is loaded.
   const hasTrack = usePlaybackStore((s) => s.index >= 0 && s.index < s.queue.length);
+  // Set when we close the floating window programmatically (queue emptied)
+  // so the player-window-closed handler doesn't mistake it for the user
+  // clicking X and revert the persisted floating layout preference.
+  const suppressRevertRef = useRef(false);
 
   // Single shared scroller for the whole app — reset to top whenever the
   // route changes so opening a playlist (or any other page) doesn't land
@@ -101,6 +105,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         console.error("[layout] open_player_window failed:", e);
       });
     } else {
+      // Closing only because the queue emptied (mode is still "floating")
+      // is a programmatic hide, not the user leaving floating mode — mark
+      // it so the close handler doesn't revert the layout to "right".
+      if (mode === "floating" && !hasTrack) suppressRevertRef.current = true;
       void invoke("close_player_window").catch(() => {
         /* no window — fine */
       });
@@ -116,6 +124,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     let cancelled = false;
     let dispose: (() => void) | undefined;
     void listen("player-window-closed", () => {
+      // Skip the revert when WE closed the window programmatically (queue
+      // emptied) rather than the user clicking X.
+      if (suppressRevertRef.current) {
+        suppressRevertRef.current = false;
+        return;
+      }
       // Only flip if we're still in floating mode — guard against
       // races where the user already switched the mode themselves
       // (which closed the window first, triggering this event).

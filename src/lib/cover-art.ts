@@ -54,14 +54,59 @@ function readCache(key: string): CacheEntry | null {
   }
 }
 
-function writeCache(key: string, url: string | null): void {
+// Hard cap on cover cache entries. Lazy TTL eviction (only on re-lookup)
+// let this grow without bound — thousands of ~200-byte keys accumulate in
+// the same localStorage quota that also holds the query cache and stores.
+const MAX_COVER_KEYS = 500;
+let writesSinceSweep = 0;
+
+/** Drop expired/malformed cover entries and cap the total, evicting the
+ *  soonest-to-expire first. Best-effort — never throws. */
+function sweepCoverCache(): void {
   try {
-    const ttl = url ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS;
-    const entry: CacheEntry = { url, expiresAt: Date.now() + ttl };
+    const live: { key: string; expiresAt: number }[] = [];
+    const dead: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(CACHE_KEY_PREFIX)) continue;
+      try {
+        const e = JSON.parse(localStorage.getItem(key) ?? "") as CacheEntry;
+        if (e.expiresAt < Date.now()) dead.push(key);
+        else live.push({ key, expiresAt: e.expiresAt });
+      } catch {
+        dead.push(key);
+      }
+    }
+    for (const key of dead) localStorage.removeItem(key);
+    if (live.length > MAX_COVER_KEYS) {
+      live.sort((a, b) => a.expiresAt - b.expiresAt);
+      for (const e of live.slice(0, live.length - MAX_COVER_KEYS)) {
+        localStorage.removeItem(e.key);
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+function writeCache(key: string, url: string | null): void {
+  const ttl = url ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS;
+  const entry: CacheEntry = { url, expiresAt: Date.now() + ttl };
+  try {
     localStorage.setItem(key, JSON.stringify(entry));
   } catch {
-    // localStorage full / disabled — fail silently, the lookup just
-    // won't be cached for this session.
+    // Quota exceeded (or disabled): sweep and retry once so a full cache
+    // doesn't silently break persistence for everything sharing the quota.
+    sweepCoverCache();
+    try {
+      localStorage.setItem(key, JSON.stringify(entry));
+    } catch {
+      /* still failing — skip caching this lookup */
+    }
+  }
+  if (++writesSinceSweep >= 100) {
+    writesSinceSweep = 0;
+    sweepCoverCache();
   }
 }
 

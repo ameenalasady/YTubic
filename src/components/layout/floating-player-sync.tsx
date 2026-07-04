@@ -366,6 +366,11 @@ function FloatingDockWatcher() {
         const mySize = await me.outerSize();
         const main = await Window.getByLabel("main");
         if (!main) return null;
+        // Don't dock against a main window that's hidden to the tray — its
+        // outerPosition/outerSize still report the last on-screen rect, so
+        // dragging the floater over that empty area would wrongly close it
+        // and leave audio playing with no visible player.
+        if (!(await main.isVisible())) return null;
         const mainPos = await main.outerPosition();
         const mainSize = await main.outerSize();
         // Coords come back in physical pixels; main's `window.innerWidth`
