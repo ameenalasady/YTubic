@@ -21,7 +21,7 @@ export const queryClient = new QueryClient({
  */
 export const persister = createSyncStoragePersister({
   storage: typeof window !== "undefined" ? window.localStorage : undefined,
-  key: "ytm-native-query-cache",
+  key: "ytubic-query-cache",
   throttleTime: 1000,
 });
 

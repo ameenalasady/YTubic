@@ -1,0 +1,38 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us what you expected to happen instead.
+      placeholder: Steps to reproduce, expected vs actual behavior…
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Shown in the About dialog (☰ → About).
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+  - type: dropdown
+    id: signed-in
+    attributes:
+      label: Account state
+      options:
+        - Signed in (Premium)
+        - Signed in (Free)
+        - Not signed in
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Anything that helps — error toasts, console output, screenshots.

@@ -26,6 +26,8 @@
     },
     "store:default",
     "window-state:default",
+    "updater:default",
+    "process:allow-restart",
     "core:event:default",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",

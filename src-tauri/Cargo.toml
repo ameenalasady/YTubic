@@ -1,8 +1,9 @@
 [package]
-name = "ytm-native"
+name = "ytubic"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "YTubic — native-feeling YouTube Music desktop client"
+authors = ["George Shyshov"]
+license = "GPL-3.0-only"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +12,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "ytm_native_lib"
+name = "ytubic_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -35,6 +36,8 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 tower = "0.5"
 cookie = "0.18"
 time = "0.3"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

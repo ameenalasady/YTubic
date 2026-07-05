@@ -14,6 +14,8 @@ import { EntityPageHeader } from "@/components/layout/entity-page-header";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAudioEngine } from "@/lib/audio-engine";
+import { useYtdlpSetup } from "@/lib/ytdlp";
+import { useUpdateStartupCheck } from "@/lib/updater";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
@@ -68,6 +70,8 @@ function useGlobalShortcuts() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   useAudioEngine();
+  useYtdlpSetup();
+  useUpdateStartupCheck();
   usePremiumStatusSync();
   useLoginSuccessListener();
   useAccountsChangedListener();

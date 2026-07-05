@@ -1,8 +1,51 @@
-# ytm-native
+<img src="assets/branding/ytubic-icon.svg" alt="YTubic" width="80" align="left" />
 
-Native-feeling YouTube Music desktop client.
+# YTubic
 
-Built as a reaction to the sluggish webview-wrapper experience — ytm-native talks to YouTube's InnerTube API directly, renders its own UI, and caches aggressively.
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
+Native-feeling YouTube Music desktop client for Windows.
+
+Built as a reaction to the sluggish webview-wrapper experience — YTubic talks to YouTube's InnerTube API directly, renders its own UI, and caches aggressively.
+
+> **Disclaimer:** YTubic is an unofficial client. It is not affiliated with,
+> endorsed by, or sponsored by Google or YouTube. "YouTube" and "YouTube Music"
+> are trademarks of Google LLC. The app streams audio through
+> [yt-dlp](https://github.com/yt-dlp/yt-dlp) and may stop working at any time if
+> YouTube changes its internals. Use at your own risk.
+
+## Install
+
+Download the latest installer from the [Releases](../../releases) page and run it.
+
+- **Windows 10/11 only** for now.
+- On first launch the app downloads its own copy of yt-dlp (~12 MB) into its
+  data folder and keeps it updated automatically.
+- Signing in is optional: browse and playback work anonymously; sign in to get
+  your library, likes, and playlists.
+
+### FAQ
+
+**Windows says "Windows protected your PC" (SmartScreen).**
+The installer is not code-signed (certificates are expensive for a free
+open-source project). Click "More info" → "Run anyway". The source code is
+public — you can audit it or build it yourself.
+
+**My antivirus flags the app / yt-dlp.**
+yt-dlp is a widely-used open-source downloader that some AV vendors
+false-positive on. The binary is downloaded directly from yt-dlp's official
+GitHub releases.
+
+**Will Google ban my account for using this?**
+Browsing/search/library requests look identical to the official web app, and
+audio streaming is fully anonymous (never tied to your account). There are no
+known cases of accounts being banned for third-party players — but no
+guarantees; see the disclaimer above.
+
+**Playback suddenly stopped working.**
+YouTube periodically changes its streaming internals. yt-dlp usually ships a
+fix within days, and the app picks it up automatically (it self-updates its
+yt-dlp copy every ~3 days). Restarting the app forces the check.
 
 ## Stack
 
@@ -68,3 +111,16 @@ src/
 └── hooks/
 src-tauri/               # Rust backend (axum stream proxy, cookies, tray)
 ```
+
+## Credits
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — audio streaming
+- [LRCLIB](https://lrclib.net) — synced lyrics
+- Musixmatch and Genius — lyrics sources
+- [Tauri](https://tauri.app), [shadcn/ui](https://ui.shadcn.com),
+  [TanStack](https://tanstack.com), and the rest of the stack above
+
+## License
+
+[GPL-3.0](LICENSE) — free to use, modify, and redistribute; derivative works
+must stay open source under the same license.

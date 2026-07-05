@@ -94,12 +94,12 @@ export function AppSidebar() {
          *  16px). In collapsed mode the row centers it like the
          *  centered menu icons below. */}
         <img
-          src="/yt-music-logo-short.svg"
-          alt="YouTube Music"
+          src="/ytubic-icon.svg"
+          alt="YTubic"
           className="size-7 shrink-0"
         />
         <span className="text-xl font-semibold leading-none tracking-tight transition-opacity duration-200 group-data-[collapsible=icon]:hidden">
-          Music
+          YTubic
         </span>
       </SidebarHeader>
 

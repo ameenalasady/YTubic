@@ -47,7 +47,7 @@ export default function FloatingPlayerApp() {
     >
       {/* Plain (non-persisting) provider: the floating window is a separate
           JS context that would otherwise write its own cache into the shared
-          `ytm-native-query-cache` key — clobbering the main window and
+          `ytubic-query-cache` key — clobbering the main window and
           resurrecting a previous account's data after a switch. It only
           mirrors live playback via events, so it needs no cold-start cache. */}
       <QueryClientProvider client={queryClient}>

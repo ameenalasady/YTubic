@@ -183,7 +183,7 @@ function PremiumGatedCacheCard({ loggedIn }: { loggedIn: boolean }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          While caching is disabled, ytm-native still plays your music — it
+          While caching is disabled, YTubic still plays your music — it
           just doesn't keep a local copy after the session. Playback also
           honors the ads and audio-quality tier of your YouTube Music
           account, the same way the official web player does.

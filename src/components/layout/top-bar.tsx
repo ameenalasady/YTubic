@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -47,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useLayoutStore, type LayoutMode } from "@/lib/store/layout";
+import { checkForUpdates } from "@/lib/updater";
 
 // Caption-bar nav buttons get just an icon-color shift on hover —
 // the default ghost-button square highlight competes visually with
@@ -134,10 +137,13 @@ export function TopBar() {
                 <BugIcon />
                 Report Issue
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem
+                onSelect={() => {
+                  void checkForUpdates({ silent: false });
+                }}
+              >
                 <DownloadIcon />
-                Updates
-                <SoonBadge />
+                Check for Updates
               </DropdownMenuItem>
               <DropdownMenuItem disabled>
                 <InfoIcon />
@@ -294,10 +300,13 @@ function ThemeSubMenu() {
   );
 }
 
+const REPO_ISSUES_URL = "https://github.com/NUber-dev/YTubic/issues/new";
+
 /**
- * Placeholder feedback form. We don't have a backend to send reports
- * to yet — Submit just acknowledges and clears the form. Wired in
- * later once we have an issue intake (GitHub, email-to-issue, etc.).
+ * Feedback form that hands off to GitHub: Submit opens a prefilled
+ * new-issue page in the default browser with the app version and OS
+ * appended, so reports arrive with the diagnostics we always ask for.
+ * Voting/discussion happens on GitHub — no backend of our own.
  */
 function ReportIssueDialog({
   open,
@@ -316,10 +325,30 @@ function ReportIssueDialog({
     }
   }, [open]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!body.trim()) return;
-    toast.success("Thanks! We don't have an intake for reports yet — coming soon.");
-    onOpenChange(false);
+    let version = "unknown";
+    try {
+      version = await getVersion();
+    } catch {
+      /* non-Tauri context (plain vite dev) — keep "unknown" */
+    }
+    const fullBody = [
+      body.trim(),
+      "",
+      "---",
+      `App version: ${version}`,
+      `OS: ${navigator.userAgent}`,
+    ].join("\n");
+    const params = new URLSearchParams({ body: fullBody });
+    if (title.trim()) params.set("title", title.trim());
+    try {
+      await openUrl(`${REPO_ISSUES_URL}?${params}`);
+      toast.success("Thanks! Finish submitting the issue in your browser.");
+      onOpenChange(false);
+    } catch (e) {
+      toast.error("Couldn't open the browser", { description: String(e) });
+    }
   };
 
   return (
@@ -328,9 +357,9 @@ function ReportIssueDialog({
         <DialogHeader>
           <DialogTitle>Report an issue</DialogTitle>
           <DialogDescription>
-            Tell us what went wrong or what you'd like to see. We're not
-            collecting these yet, but the form is here for when we wire
-            up a real channel.
+            Tell us what went wrong or what you'd like to see. Submitting
+            opens a prefilled GitHub issue in your browser — app version
+            and OS are attached automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -353,7 +382,7 @@ function ReportIssueDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!body.trim()}>
+          <Button onClick={() => void submit()} disabled={!body.trim()}>
             Submit
           </Button>
         </DialogFooter>

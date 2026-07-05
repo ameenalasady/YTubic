@@ -24,6 +24,8 @@ use tower::ServiceExt;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeFile;
 
+mod ytdlp;
+
 fn sanitize_video_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() < 32
@@ -43,6 +45,9 @@ fn sanitize_video_id(id: &str) -> bool {
 /// any attacker with our binary can read the entropy string.
 mod secure_store {
     #[cfg(windows)]
+    // Keeps the historical "ytm-native" tag on purpose: this string is
+    // baked into every existing encrypted cookie jar, and changing it
+    // would orphan them all. It's an opaque salt, not a product name.
     const ENTROPY: &[u8] = b"ytm-native/cookies.enc v1";
 
     #[cfg(windows)]
@@ -684,7 +689,7 @@ async fn open_player_window(
         "player",
         WebviewUrl::App("index.html?floating-player=1".into()),
     )
-    .title("ytm-native — player")
+    .title("YTubic — player")
     .decorations(false)
     .inner_size(360.0, 720.0)
     .min_inner_size(320.0, 560.0)
@@ -1010,14 +1015,24 @@ async fn delete_cache_entries(
     Ok(freed)
 }
 
+/// Make the managed yt-dlp binary available (download on first run,
+/// throttled self-update after). Invoked by the frontend on mount so
+/// the `ytdlp-state` event listener is guaranteed to exist before any
+/// state event fires; also serves as the retry path after a failed
+/// download. Idempotent — see `ytdlp::ensure`.
+#[tauri::command]
+async fn ensure_ytdlp(app: tauri::AppHandle) {
+    ytdlp::ensure(app).await;
+}
+
 /// Run yt-dlp to resolve a videoId into metadata JSON.
 #[tauri::command]
-fn resolve_stream_ytdlp(video_id: String) -> Result<String, String> {
+fn resolve_stream_ytdlp(app: tauri::AppHandle, video_id: String) -> Result<String, String> {
     if !sanitize_video_id(&video_id) {
         return Err(format!("invalid videoId: {video_id}"));
     }
     let url = format!("https://www.youtube.com/watch?v={video_id}");
-    let mut command = std::process::Command::new("yt-dlp");
+    let mut command = std::process::Command::new(ytdlp::program(&ytdlp::managed_path(&app)));
     command.args([
         "-j",
         "-f",
@@ -1080,6 +1095,11 @@ struct StreamServer {
     ephemeral_dir: PathBuf,
     cover_dir: PathBuf,
     downloads: DownloadMap,
+    /// Expected location of the managed yt-dlp copy. Resolution to an
+    /// actual program (managed vs PATH fallback) happens per-spawn via
+    /// `ytdlp::program` so a mid-session download takes effect
+    /// immediately.
+    ytdlp_bin: PathBuf,
 }
 
 /// Read the `ephemeral` query flag from a stream/prefetch request.
@@ -1310,7 +1330,7 @@ fn spawn_downloader(
         let _ = tokio::fs::create_dir_all(&target_dir).await;
         let _ = tokio::fs::remove_file(&part_path).await; // clean stale
 
-        let mut cmd = TokioCommand::new("yt-dlp");
+        let mut cmd = TokioCommand::new(ytdlp::program(&srv.ytdlp_bin));
         cmd.args([
             "-f",
             "bestaudio[ext=webm]/bestaudio",
@@ -1713,6 +1733,7 @@ async fn start_stream_server(
     cache_dir: PathBuf,
     ephemeral_dir: PathBuf,
     cover_dir: PathBuf,
+    ytdlp_bin: PathBuf,
 ) {
     if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
         eprintln!("[stream-server] mkdir {cache_dir:?}: {e}");
@@ -1748,6 +1769,7 @@ async fn start_stream_server(
         ephemeral_dir,
         cover_dir,
         downloads: Arc::new(Mutex::new(HashMap::new())),
+        ytdlp_bin,
     };
 
     // Per-launch token as an unguessable path prefix. Baked into the base
@@ -1800,7 +1822,7 @@ fn show_main_window(app: &tauri::AppHandle) {
 }
 
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let show_item = MenuItem::with_id(app, "show", "Show ytm-native", true, None::<&str>)?;
+    let show_item = MenuItem::with_id(app, "show", "Show YTubic", true, None::<&str>)?;
     let play_item = MenuItem::with_id(app, "play_pause", "Play / Pause", true, Some("Space"))?;
     let prev_item = MenuItem::with_id(app, "prev", "Previous", true, None::<&str>)?;
     let next_item = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
@@ -1814,7 +1836,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     let _tray = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().cloned().unwrap())
-        .tooltip("ytm-native")
+        .tooltip("YTubic")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -1873,8 +1895,11 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
+            ensure_ytdlp,
             resolve_stream_ytdlp,
             get_stream_base_url,
             start_login,
@@ -1930,10 +1955,12 @@ pub fn run() {
             eprintln!("[stream-server] cache dir: {cache_dir:?}");
             eprintln!("[stream-server] ephemeral dir: {ephemeral_dir:?}");
             eprintln!("[stream-server] cover dir: {cover_dir:?}");
+            let ytdlp_bin = ytdlp::managed_path(&handle);
             tauri::async_runtime::spawn(async move {
                 migrate_plaintext_cookies(&handle).await;
                 migrate_to_accounts_layout(&handle).await;
-                start_stream_server(port, token, cache_dir, ephemeral_dir, cover_dir).await;
+                start_stream_server(port, token, cache_dir, ephemeral_dir, cover_dir, ytdlp_bin)
+                    .await;
             });
             if let Err(e) = build_tray(app.handle()) {
                 eprintln!("[tray] build failed: {e}");
