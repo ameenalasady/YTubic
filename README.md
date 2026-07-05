@@ -4,9 +4,22 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-Native-feeling YouTube Music desktop client for Windows.
+A fast, responsive YouTube Music desktop client for Windows.
 
-Built as a reaction to the sluggish webview-wrapper experience — YTubic talks to YouTube's InnerTube API directly, renders its own UI, and caches aggressively.
+Built as a reaction to the sluggish webview-wrapper experience — YTubic talks to YouTube's InnerTube API directly, renders its own UI, and caches aggressively, so navigation and playback feel instant.
+
+![YTubic — artist page with the player and synced lyrics](assets/screenshots/artist-page.jpg)
+
+## Features
+
+- **Fast and responsive UI** — instant navigation with prefetch and aggressive caching; no page reloads, no spinners on every click
+- **Flexible player layouts** — dock the player at the bottom or as a right-side panel
+- **Floating player widget** — pop the player out into a compact always-on-top window
+- **Synced lyrics** — line-by-line synced lyrics from multiple providers (LRCLIB, Musixmatch, Genius)
+- **Hi-res cover art** — upgrades album covers to high-resolution studio art when available
+- **Full library support** — your playlists, likes, albums and artists; search with filters; radio/autoplay queues
+- **Windows integration** — media keys, System Media Transport Controls, tray icon, single instance
+- **Auto-updates** — the app updates itself from GitHub Releases, and keeps its yt-dlp copy fresh automatically
 
 > **Disclaimer:** YTubic is an unofficial client. It is not affiliated with,
 > endorsed by, or sponsored by Google or YouTube. "YouTube" and "YouTube Music"
@@ -58,18 +71,6 @@ yt-dlp copy every ~3 days). Restarting the app forces the check.
 - **Data:** TanStack Query
 - **Client state:** Zustand
 - **Icons:** lucide-react
-
-## Phase status
-
-- [x] **Phase 0** — Scaffold: Tauri + React + shadcn + TanStack, app shell (sidebar, topbar, player bar placeholders), stub routes (Home/Search/Library/Settings)
-- [x] **Phase 1** — InnerTube client + auth (cookie import), real Home feed
-- [x] **Phase 2** — Artist/Album/Playlist pages, search, cached navigation
-- [x] **Phase 3** — Audio engine + player bar, MediaSession API
-- [x] **Phase 4** — Queue management, context menus, autoplay/radio
-- [x] **Phase 5** — Library (your playlists, liked songs)
-- [x] **Phase 6** — Aggressive caching, infinite scroll via continuations
-- [x] **Phase 7** — Windows SMTC, global media keys, tray, single-instance
-- [x] **Phase 8** — Settings, shortcuts, polish, floating player, lyrics
 
 ## Dev
 

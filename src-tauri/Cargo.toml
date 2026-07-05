@@ -1,7 +1,7 @@
 [package]
 name = "ytubic"
 version = "0.1.0"
-description = "YTubic — native-feeling YouTube Music desktop client"
+description = "YTubic — fast, responsive YouTube Music desktop client"
 authors = ["George Shyshov"]
 license = "GPL-3.0-only"
 edition = "2021"
