@@ -1,15 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { isPremium } from "@/lib/store/premium";
 
 /**
  * The Rust side runs a tiny axum server on a random localhost port that
  * streams yt-dlp output progressively. We query the port once and build
  * stream URLs from it.
  *
- * Non-Premium / signed-out users append `?ephemeral=1` to every stream
- * URL. The Rust handler reads that as "serve playback but write to a
- * session-only cache directory that gets wiped on every app startup" —
- * a persistent on-disk library of tracks is a Premium-only feature.
+ * Every played track is cached to disk regardless of account tier — we're
+ * downloading the bytes anyway, so keeping them makes replays instant.
+ * The persistent cache is bounded by a user-configurable size limit
+ * (Settings → Cache), enforced on the Rust side with oldest-first
+ * eviction.
  */
 
 let baseUrlPromise: Promise<string> | null = null;
@@ -38,29 +38,23 @@ export function getStreamBaseUrl(): Promise<string> {
   return baseUrlPromise;
 }
 
-function ephemeralSuffix(): string {
-  return isPremium() ? "" : "?ephemeral=1";
-}
-
 export async function streamUrlFor(videoId: string): Promise<string> {
   const base = await getStreamBaseUrl();
-  return `${base}/stream/${encodeURIComponent(videoId)}${ephemeralSuffix()}`;
+  return `${base}/stream/${encodeURIComponent(videoId)}`;
 }
 
 const prefetched = new Set<string>();
 
 /**
  * Warm the disk cache for a videoId in the background. No-ops if we
- * already fired a prefetch for this id in this session, or if the user
- * isn't on Premium — pre-warming a session-only cache doesn't help once
- * the user advances past the prefetched track (the next app launch
- * wipes it anyway).
+ * already fired a prefetch for this id in this session. Runs for every
+ * user now that caching is universal, so the next track is ready before
+ * the user reaches it.
  *
  * The server itself is idempotent on a per-file basis (checks .part /
  * .webm existence), so re-firing is cheap but still skippable.
  */
 export async function prefetchStream(videoId: string): Promise<void> {
-  if (!isPremium()) return;
   if (prefetched.has(videoId)) return;
   prefetched.add(videoId);
   try {

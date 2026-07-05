@@ -13,7 +13,6 @@ import {
   Trash2Icon,
   HeartIcon,
   ImageIcon,
-  LockIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +27,6 @@ import { Badge } from "@/components/ui/badge";
 import { resetInnertube } from "@/lib/innertube/client";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import { clearPrefetchMemo } from "@/lib/stream";
-import { usePremiumStore } from "@/lib/store/premium";
 import { removeAccount } from "@/lib/store/accounts";
 import type { ShelfItem } from "@/lib/innertube/types";
 import { cn } from "@/lib/utils";
@@ -147,80 +145,11 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
-      <CacheCardGate loggedIn={!!loggedIn.data} />
+      <CacheCard loggedIn={!!loggedIn.data} />
 
       <CoverCacheCard />
     </div>
   );
-}
-
-function PremiumGatedCacheCard({ loggedIn }: { loggedIn: boolean }) {
-  const setOverride = usePremiumStore((s) => s.setOverride);
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle className="flex items-center gap-2">
-              <DatabaseIcon className="size-5" />
-              Cache
-            </CardTitle>
-            <CardDescription>
-              Persistent track caching is a YouTube Premium feature.
-              {loggedIn
-                ? " We didn't find an active Premium subscription on this account, so streams play through without being saved to disk."
-                : " Sign in with a Google account that has YouTube Premium to enable on-disk caching."}
-            </CardDescription>
-          </div>
-          <Badge
-            variant="outline"
-            className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-          >
-            <LockIcon className="size-3.5" />
-            Premium only
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          While caching is disabled, YTubic still plays your music — it
-          just doesn't keep a local copy after the session. Playback also
-          honors the ads and audio-quality tier of your YouTube Music
-          account, the same way the official web player does.
-        </p>
-        {loggedIn ? (
-          <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-3">
-            <p className="text-sm">
-              <span className="font-medium">Already on Premium?</span> Our
-              detection reads YouTube Music's account menu, which doesn't
-              always include a clear membership badge. If you're sure your
-              subscription is active, enable caching manually.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-start"
-              onClick={() => {
-                setOverride(true);
-                toast.success("Caching enabled");
-              }}
-            >
-              I have Premium — enable caching
-            </Button>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CacheCardGate({ loggedIn }: { loggedIn: boolean }) {
-  const premium = usePremiumStore((s) => s.status);
-  const override = usePremiumStore((s) => s.override);
-  if (premium !== "premium" && !override) {
-    return <PremiumGatedCacheCard loggedIn={loggedIn} />;
-  }
-  return <CacheCard loggedIn={loggedIn} overridden={override && premium !== "premium"} />;
 }
 
 function CoverCacheCard() {
@@ -308,15 +237,23 @@ type CacheEntry = {
 type FilterMode = "all" | "liked" | "notLiked";
 type SortMode = "newest" | "oldest" | "largest";
 
-function CacheCard({
-  loggedIn,
-  overridden,
-}: {
-  loggedIn: boolean;
-  overridden: boolean;
-}) {
+const GB = 1024 ** 3;
+
+// Presets for the storage-limit picker. `0` = unlimited. Kept in sync
+// with the Rust default (5 GiB) so a fresh install lands on a preset.
+const CACHE_LIMIT_OPTIONS: { label: string; bytes: number }[] = [
+  { label: "512 MB", bytes: 512 * 1024 * 1024 },
+  { label: "1 GB", bytes: 1 * GB },
+  { label: "2 GB", bytes: 2 * GB },
+  { label: "5 GB", bytes: 5 * GB },
+  { label: "10 GB", bytes: 10 * GB },
+  { label: "25 GB", bytes: 25 * GB },
+  { label: "50 GB", bytes: 50 * GB },
+  { label: "Unlimited", bytes: 0 },
+];
+
+function CacheCard({ loggedIn }: { loggedIn: boolean }) {
   const qc = useQueryClient();
-  const setOverride = usePremiumStore((s) => s.setOverride);
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("newest");
   const [pending, setPending] = useState<Set<string>>(new Set());
@@ -329,6 +266,29 @@ function CacheCard({
     // re-fetch every 5s so the list reflects new cache entries.
     refetchInterval: 5_000,
   });
+
+  const limitQuery = useQuery({
+    queryKey: ["cache-limit"],
+    queryFn: () => invoke<number>("get_cache_limit"),
+    staleTime: 60_000,
+  });
+  const limit = limitQuery.data ?? 0;
+
+  const setLimit = async (bytes: number) => {
+    try {
+      await invoke("set_cache_limit", { bytes });
+      await qc.invalidateQueries({ queryKey: ["cache-limit"] });
+      // Lowering the cap may have evicted tracks — refresh the list too.
+      await qc.invalidateQueries({ queryKey: ["cache-list"] });
+      toast.success(
+        bytes === 0
+          ? "Storage limit removed"
+          : `Storage limit set to ${formatBytes(bytes)}`,
+      );
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
 
   const liked = useQuery({
     queryKey: ["liked-songs"],
@@ -439,24 +399,44 @@ function CacheCard({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {overridden ? (
-          <div className="flex items-start justify-between gap-3 rounded-md border border-dashed border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-            <span className="text-muted-foreground">
-              Caching is enabled via manual Premium override. Turn it off if
-              this account isn't actually on Premium.
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setOverride(false);
-                toast.info("Manual Premium override turned off");
-              }}
+        <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Storage limit</span>
+              <span className="text-xs text-muted-foreground">
+                {limit === 0
+                  ? `Unlimited · using ${formatBytes(totalBytes)}`
+                  : `Using ${formatBytes(totalBytes)} of ${formatBytes(limit)}`}
+              </span>
+            </div>
+            <select
+              value={String(limit)}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              disabled={limitQuery.isLoading}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              aria-label="Cache storage limit"
             >
-              Turn off override
-            </Button>
+              {CACHE_LIMIT_OPTIONS.map((o) => (
+                <option key={o.bytes} value={String(o.bytes)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
-        ) : null}
+          {limit > 0 && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  totalBytes >= limit ? "bg-amber-500" : "bg-primary",
+                )}
+                style={{
+                  width: `${Math.min(100, (totalBytes / limit) * 100)}%`,
+                }}
+              />
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <FilterChip
             active={filter === "all"}
