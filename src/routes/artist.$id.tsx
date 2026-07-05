@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
+import { toast } from "sonner";
 import { fetchArtist } from "@/lib/innertube/artist";
+import { fetchWatchQueue } from "@/lib/innertube/radio";
+import { usePlaybackStore } from "@/lib/store/playback";
 import { EntityHeader } from "@/components/shared/entity-header";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { TrackList } from "@/components/shared/track-list";
@@ -40,6 +43,27 @@ function ArtistPageView() {
 
   if (isLoading || !data) return <ArtistSkeleton />;
 
+  // "Shuffle" plays the artist's whole catalogue, not just the handful of
+  // top songs shown on the page. YouTube Music exposes that as a shuffle
+  // radio playlist (`RDAO…`) on the header's play button; expanding it via
+  // /next returns the full, pre-shuffled queue. Only offered when the
+  // artist actually has one.
+  const shuffleId = data.shuffleId;
+  const onShuffle = shuffleId
+    ? async () => {
+        try {
+          const tracks = await fetchWatchQueue(shuffleId);
+          if (tracks.length) {
+            usePlaybackStore.getState().playShelfItems(tracks, 0);
+          } else {
+            toast.error("Couldn't shuffle — no tracks returned.");
+          }
+        } catch (e) {
+          toast.error(`Couldn't shuffle: ${(e as Error).message}`);
+        }
+      }
+    : undefined;
+
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
       <EntityHeader
@@ -48,6 +72,7 @@ function ArtistPageView() {
         description={data.description}
         thumbnails={data.thumbnails}
         round
+        onShuffle={onShuffle}
       />
 
       {data.shelves.map((shelf) =>

@@ -29,11 +29,16 @@ export async function fetchArtist(id: string): Promise<ArtistPage> {
   const radioId: string | undefined =
     header.startRadioButton?.buttonRenderer?.navigationEndpoint?.watchEndpoint
       ?.videoId;
+  // The artist "play" button is a shuffle-all: its watchEndpoint carries
+  // both the first track's `videoId` and the shuffle-radio `playlistId`
+  // (`RDAO…`). We want the playlistId — feeding it to /next expands the
+  // whole catalogue into a shuffled queue. (An older layout exposed it as
+  // `watchPlaylistEndpoint.playlistId`, kept as a fallback.)
   const shuffleId: string | undefined =
     header.playButton?.buttonRenderer?.navigationEndpoint?.watchPlaylistEndpoint
       ?.playlistId ??
     header.playButton?.buttonRenderer?.navigationEndpoint?.watchEndpoint
-      ?.videoId;
+      ?.playlistId;
 
   const tabs: YtNode[] =
     json?.contents?.singleColumnBrowseResultsRenderer?.tabs ?? [];
