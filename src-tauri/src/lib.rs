@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -922,6 +922,120 @@ fn stream_cache_dir(app: &tauri::AppHandle) -> PathBuf {
         .join("stream")
 }
 
+/// Default size cap for the persistent track cache when the user hasn't
+/// set one. Caching now runs for every user (not just Premium), so an
+/// unbounded default would let the cache grow until the disk fills;
+/// 5 GiB is a comfortable "few hundred tracks" floor the user can raise
+/// or drop to unlimited from Settings.
+const DEFAULT_CACHE_LIMIT_BYTES: u64 = 5 * 1024 * 1024 * 1024;
+
+/// Where the persisted cache-size limit lives (plain integer bytes,
+/// `0` = unlimited). Kept next to the accounts data in app-data so it
+/// survives cache clears.
+fn cache_limit_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("cache-limit")
+}
+
+/// Read the persisted cache limit, falling back to the default when the
+/// file is missing or unparseable.
+async fn read_cache_limit(app: &tauri::AppHandle) -> u64 {
+    match tokio::fs::read_to_string(cache_limit_path(app)).await {
+        Ok(s) => s.trim().parse().unwrap_or(DEFAULT_CACHE_LIMIT_BYTES),
+        Err(_) => DEFAULT_CACHE_LIMIT_BYTES,
+    }
+}
+
+/// Persist the cache limit so it survives restarts.
+async fn write_cache_limit(app: &tauri::AppHandle, bytes: u64) -> Result<(), String> {
+    let path = cache_limit_path(app);
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir)
+            .await
+            .map_err(|e| format!("mkdir: {e}"))?;
+    }
+    tokio::fs::write(&path, bytes.to_string())
+        .await
+        .map_err(|e| format!("write cache-limit: {e}"))
+}
+
+/// Evict oldest tracks (by mtime) from `dir` until its total `.webm`
+/// size is at or under `limit`. `limit == 0` means unlimited (no-op).
+/// Only finalized `.webm` files count and are eligible for eviction —
+/// in-flight `.part` downloads are left alone. Deleting a file that's
+/// currently being served is safe: on Unix the open handle keeps the
+/// bytes readable until the stream finishes, and on Windows the delete
+/// simply fails and is retried on the next download.
+async fn enforce_cache_limit(dir: PathBuf, limit: u64) {
+    if limit == 0 {
+        return;
+    }
+    let mut rd = match tokio::fs::read_dir(&dir).await {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
+    let mut total: u64 = 0;
+    while let Ok(Some(e)) = rd.next_entry().await {
+        let is_webm = e
+            .file_name()
+            .to_str()
+            .map(|n| n.ends_with(".webm"))
+            .unwrap_or(false);
+        if !is_webm {
+            continue;
+        }
+        let Ok(meta) = e.metadata().await else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        total += meta.len();
+        files.push((e.path(), meta.len(), mtime));
+    }
+    if total <= limit {
+        return;
+    }
+    // Oldest first — least-recently-finalized tracks are evicted before
+    // fresher ones.
+    files.sort_by_key(|(_, _, mtime)| *mtime);
+    for (path, size, _) in files {
+        if total <= limit {
+            break;
+        }
+        if tokio::fs::remove_file(&path).await.is_ok() {
+            total = total.saturating_sub(size);
+            eprintln!("[cache] evicted {path:?} ({size} bytes) to honor {limit}-byte limit");
+        }
+    }
+}
+
+/// Return the active persistent-cache size limit in bytes (`0` =
+/// unlimited). The value is authoritative from the shared atomic, which
+/// `run()` seeds from the persisted file on startup.
+#[tauri::command]
+async fn get_cache_limit(
+    state: tauri::State<'_, StreamServerState>,
+) -> Result<u64, String> {
+    Ok(state.cache_limit.load(Ordering::Relaxed))
+}
+
+/// Update the persistent-cache size limit, persist it, and immediately
+/// evict down to the new ceiling. `bytes == 0` disables the cap.
+#[tauri::command]
+async fn set_cache_limit(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StreamServerState>,
+    bytes: u64,
+) -> Result<(), String> {
+    state.cache_limit.store(bytes, Ordering::Relaxed);
+    write_cache_limit(&app, bytes).await?;
+    enforce_cache_limit(stream_cache_dir(&app), bytes).await;
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 struct CacheEntry {
     #[serde(rename = "videoId")]
@@ -1103,6 +1217,11 @@ struct StreamServer {
     /// `ytdlp::program` so a mid-session download takes effect
     /// immediately.
     ytdlp_bin: PathBuf,
+    /// Max total bytes the persistent cache may occupy before oldest
+    /// tracks get evicted. `0` means unlimited. Shared (Arc) with
+    /// `StreamServerState` so the `set_cache_limit` command updates it
+    /// live without restarting the server.
+    cache_limit: Arc<AtomicU64>,
 }
 
 /// Read the `ephemeral` query flag from a stream/prefetch request.
@@ -1296,6 +1415,10 @@ struct StreamServerState {
     /// guesses the random port still can't form a valid URL — this closes
     /// the CSRF-spawn and DNS-rebinding-read vectors.
     token: Arc<Mutex<Option<String>>>,
+    /// Persistent-cache size cap in bytes (`0` = unlimited). Shared with
+    /// the running `StreamServer` so `set_cache_limit` takes effect on
+    /// the next download without a restart. Seeded from disk in `run()`.
+    cache_limit: Arc<AtomicU64>,
 }
 
 #[tauri::command]
@@ -1460,6 +1583,14 @@ fn spawn_downloader(
             // Failed: drop the entry immediately so the next play retries
             // instead of getting an instant 502 for the whole 60s window.
             downloads.lock().await.remove(&map_key);
+        }
+
+        // Keep the persistent cache under its configured size cap. Only
+        // the shared cache is bounded — the (legacy) ephemeral pool is
+        // wiped wholesale on startup, so it needs no per-track eviction.
+        if success && target_dir == srv.cache_dir {
+            let limit = srv.cache_limit.load(Ordering::Relaxed);
+            enforce_cache_limit(srv.cache_dir.clone(), limit).await;
         }
     });
 }
@@ -1737,6 +1868,7 @@ async fn start_stream_server(
     ephemeral_dir: PathBuf,
     cover_dir: PathBuf,
     ytdlp_bin: PathBuf,
+    cache_limit: Arc<AtomicU64>,
 ) {
     if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
         eprintln!("[stream-server] mkdir {cache_dir:?}: {e}");
@@ -1748,10 +1880,10 @@ async fn start_stream_server(
         eprintln!("[stream-server] mkdir {cover_dir:?}: {e}");
     }
 
-    // Wipe whatever a previous (anonymous / Free) session left behind.
-    // Persisting tracks across restarts is a Premium-only feature; if a
-    // non-Premium user manages to crash the app mid-stream we still
-    // want the leftover .webm gone before the next launch.
+    // Wipe the legacy ephemeral pool. All users now cache persistently
+    // (see the `stream.ts` URLs), so nothing new is routed here; this
+    // just sweeps any `.webm` a pre-caching-for-everyone build left
+    // behind so it doesn't linger untracked.
     if let Ok(mut rd) = tokio::fs::read_dir(&ephemeral_dir).await {
         let mut wiped: u64 = 0;
         while let Ok(Some(entry)) = rd.next_entry().await {
@@ -1767,12 +1899,18 @@ async fn start_stream_server(
         }
     }
 
+    // Bring the persistent cache under its cap immediately at startup —
+    // e.g. after the user lowered the limit while the app was closed, or
+    // after a crash left the cache over budget.
+    enforce_cache_limit(cache_dir.clone(), cache_limit.load(Ordering::Relaxed)).await;
+
     let server = StreamServer {
         cache_dir,
         ephemeral_dir,
         cover_dir,
         downloads: Arc::new(Mutex::new(HashMap::new())),
         ytdlp_bin,
+        cache_limit,
     };
 
     // Per-launch token as an unguessable path prefix. Baked into the base
@@ -1901,6 +2039,7 @@ pub fn run() {
     let state = StreamServerState::default();
     let port_handle = state.port.clone();
     let token_handle = state.token.clone();
+    let cache_limit_handle = state.cache_limit.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -1939,6 +2078,8 @@ pub fn run() {
             get_active_account_id,
             list_cache,
             delete_cache_entries,
+            get_cache_limit,
+            set_cache_limit,
             cache_cover,
             cover_cache_stats,
             clear_cover_cache,
@@ -1982,11 +2123,23 @@ pub fn run() {
             eprintln!("[stream-server] ephemeral dir: {ephemeral_dir:?}");
             eprintln!("[stream-server] cover dir: {cover_dir:?}");
             let ytdlp_bin = ytdlp::managed_path(&handle);
+            let cache_limit = cache_limit_handle.clone();
             tauri::async_runtime::spawn(async move {
                 migrate_plaintext_cookies(&handle).await;
                 migrate_to_accounts_layout(&handle).await;
-                start_stream_server(port, token, cache_dir, ephemeral_dir, cover_dir, ytdlp_bin)
-                    .await;
+                // Seed the shared limit from disk (or the default) before
+                // the server starts enforcing it.
+                cache_limit.store(read_cache_limit(&handle).await, Ordering::Relaxed);
+                start_stream_server(
+                    port,
+                    token,
+                    cache_dir,
+                    ephemeral_dir,
+                    cover_dir,
+                    ytdlp_bin,
+                    cache_limit,
+                )
+                .await;
             });
             if let Err(e) = build_tray(app.handle()) {
                 eprintln!("[tray] build failed: {e}");
