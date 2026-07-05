@@ -20,6 +20,16 @@ export const Route = createFileRoute("/artist/$id")({
     }),
 });
 
+/** Fisher-Yates shuffle — returns a new array, leaves the input alone. */
+function shuffleTracks<T>(tracks: readonly T[]): T[] {
+  const a = tracks.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function ArtistPageView() {
   const { id } = Route.useParams();
   const { data, isLoading, error } = useQuery({
@@ -54,7 +64,12 @@ function ArtistPageView() {
         try {
           const tracks = await fetchWatchQueue(shuffleId);
           if (tracks.length) {
-            usePlaybackStore.getState().playShelfItems(tracks, 0);
+            // YouTube returns the RDAO shuffle queue in a *deterministic*
+            // order for a stable visitorData (which the app always sends),
+            // so re-shuffling the same artist would otherwise replay the
+            // identical queue. Randomize client-side so each Shuffle is
+            // genuinely different.
+            usePlaybackStore.getState().playShelfItems(shuffleTracks(tracks), 0);
           } else {
             toast.error("Couldn't shuffle — no tracks returned.");
           }
