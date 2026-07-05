@@ -88,20 +88,10 @@ export function AppSidebar() {
       collapsible="icon"
       className="px-2 pb-2 pt-0 duration-300 ease-out [&>[data-slot=sidebar-inner]]:rounded-[10px] [&>[data-slot=sidebar-inner]]:bg-surface [&>[data-slot=sidebar-inner]]:shadow-none"
     >
-      <SidebarHeader className="flex-row items-center gap-2 px-4 pt-[18px] pb-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
-        {/* Single round logo. In expanded mode it sits at px-4 to line
-         *  up with menu icons (which are at group-p-2 + button-p-2 =
-         *  16px). In collapsed mode the row centers it like the
-         *  centered menu icons below. */}
-        <img
-          src="/ytubic-icon.svg"
-          alt="YTubic"
-          className="size-7 shrink-0"
-        />
-        <span className="text-xl font-semibold leading-none tracking-tight transition-opacity duration-200 group-data-[collapsible=icon]:hidden">
-          YTubic
-        </span>
-      </SidebarHeader>
+      {/* Branding (logo + wordmark) intentionally omitted on this fork.
+       *  A slim empty header stays as top spacing so the first nav group
+       *  doesn't butt against the sidebar's rounded top edge. */}
+      <SidebarHeader className="pt-3" />
 
       <SidebarContent className="gap-0 overflow-x-hidden">
         <SidebarGroup className="py-1">
