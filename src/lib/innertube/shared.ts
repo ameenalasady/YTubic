@@ -502,6 +502,8 @@ export function mapTwoRowItem(raw: YtNode): ShelfItem | null {
   // each artist as a clickable link instead of inert text.
   const subtitleRuns: YtNode[] = raw.subtitle?.runs ?? [];
   const artists: { id?: string; name: string }[] = [];
+  let album: string | undefined;
+  let albumId: string | undefined;
   for (const run of subtitleRuns) {
     const browseId = run.navigationEndpoint?.browseEndpoint?.browseId as
       string | undefined;
@@ -510,6 +512,9 @@ export function mapTwoRowItem(raw: YtNode): ShelfItem | null {
       ?.pageType as string | undefined;
     if (browseId && pageType?.includes("ARTIST")) {
       artists.push({ id: browseId, name: run.text ?? "" });
+    } else if (browseId && pageType?.includes("ALBUM")) {
+      album = run.text ?? album;
+      albumId = browseId;
     }
   }
 
@@ -578,6 +583,10 @@ export function mapTwoRowItem(raw: YtNode): ShelfItem | null {
     round,
     explicit: readExplicit(raw) || undefined,
     playableVideoId,
+    // Only meaningful for song/video/album cards; harmless on others.
+    artists: artists.length ? artists : undefined,
+    album,
+    albumId,
   };
 }
 

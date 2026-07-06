@@ -26,6 +26,7 @@ import {
 import { Thumbnail } from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
+import { AlbumLink } from "@/components/shared/album-link";
 import { QueuePopover } from "@/components/layout/queue-panel";
 import {
   LyricsBody,
@@ -154,6 +155,13 @@ export function PlayerBarBottom() {
                 Pick a track to start
               </span>
             )}
+            {track?.album ? (
+              <AlbumLink
+                albumId={track.albumId}
+                name={track.album}
+                className="block truncate text-xs text-muted-foreground leading-tight"
+              />
+            ) : null}
           </div>
         </div>
 

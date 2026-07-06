@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { Thumbnail } from "@/components/shared/thumbnail";
+import { ArtistLinks } from "@/components/shared/artist-links";
 import { TrackContextMenu } from "@/components/shared/track-context-menu";
 import { usePlaybackStore } from "@/lib/store/playback";
 import {
@@ -142,8 +143,20 @@ export function ShelfCard({ item, className }: Props) {
       ? "rounded-lg"
       : "rounded-md";
 
+  // Songs, videos and albums carry an artist list — link each artist to
+  // their page. Everything else (playlists, artist tiles) keeps the plain
+  // subtitle text.
+  const linkArtists =
+    (item.kind === "song" ||
+      item.kind === "video" ||
+      item.kind === "album") &&
+    !!item.artists?.length;
+
+  // Card content. Rendered pointer-events-none so clicks fall through to
+  // the primary-action overlay below — except the artist links, which
+  // re-enable pointer events and sit above it (see the overlay note).
   const body = (
-    <>
+    <div className="pointer-events-none relative z-10 flex flex-col gap-2">
       <div
         className={cn(
           "relative w-full",
@@ -184,7 +197,17 @@ export function ShelfCard({ item, className }: Props) {
             </span>
           ) : null}
         </div>
-        {subtitle ? (
+        {linkArtists ? (
+          <ArtistLinks
+            artists={item.artists}
+            fallback={subtitle}
+            className={cn(
+              "truncate text-xs text-muted-foreground",
+              item.round && "text-center",
+            )}
+            linkClassName="pointer-events-auto"
+          />
+        ) : subtitle ? (
           <span
             className={cn(
               "truncate text-xs text-muted-foreground",
@@ -195,7 +218,7 @@ export function ShelfCard({ item, className }: Props) {
           </span>
         ) : null}
       </div>
-    </>
+    </div>
   );
 
   if (item.kind === "category") {
@@ -238,74 +261,80 @@ export function ShelfCard({ item, className }: Props) {
     );
   }
 
+  // Primary-action overlay. Covering the whole card with a single
+  // interactive element (rather than wrapping `body`) keeps the artist
+  // links inside `body` from being nested inside another <a>/<button> —
+  // which is invalid HTML and eats their clicks. `body` is
+  // pointer-events-none so a click anywhere still reaches this overlay;
+  // the artist links opt back in and, sitting on a higher z-index, win
+  // the clicks that land on them. `cursor-pointer` here is what makes the
+  // whole card (songs included) show the hand cursor — Tailwind v4 no
+  // longer sets it on <button> by default.
+  const overlayClass =
+    "absolute inset-0 z-0 rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
   if (item.kind === "artist") {
     return (
-      <Link
-        to="/artist/$id"
-        params={{ id: item.id }}
-        className={cn(CARD_CLASS, className)}
-      >
+      <div className={cn(CARD_CLASS, "relative", className)}>
+        <Link
+          to="/artist/$id"
+          params={{ id: item.id }}
+          aria-label={item.title}
+          className={overlayClass}
+        />
         {body}
-      </Link>
+      </div>
     );
   }
 
   if (item.kind === "album") {
     return (
-      <Link
-        to="/album/$id"
-        params={{ id: item.id }}
-        className={cn(CARD_CLASS, className)}
-      >
+      <div className={cn(CARD_CLASS, "relative", className)}>
+        <Link
+          to="/album/$id"
+          params={{ id: item.id }}
+          aria-label={item.title}
+          className={overlayClass}
+        />
         {body}
-      </Link>
+      </div>
     );
   }
 
-  if (item.kind === "playlist") {
-    // Long-form video masquerading as a playlist (description-timestamp
-    // chapters). Our /playlist/$id can't render it; play the video instead.
-    if (item.playableVideoId) {
-      const asSong: ShelfItem = {
-        ...item,
-        kind: "song",
-        id: item.playableVideoId,
-      };
-      return (
-        <TrackContextMenu item={asSong}>
-          <button
-            type="button"
-            className={cn(CARD_CLASS, className)}
-            onClick={() => usePlaybackStore.getState().playNow(asSong)}
-          >
-            {body}
-          </button>
-        </TrackContextMenu>
-      );
-    }
+  if (item.kind === "playlist" && !item.playableVideoId) {
     return (
       <PlaylistPinContextMenu item={item}>
-        <Link
-          to="/playlist/$id"
-          params={{ id: item.id }}
-          className={cn(CARD_CLASS, className)}
-        >
+        <div className={cn(CARD_CLASS, "relative", className)}>
+          <Link
+            to="/playlist/$id"
+            params={{ id: item.id }}
+            aria-label={item.title}
+            className={overlayClass}
+          />
           {body}
-        </Link>
+        </div>
       </PlaylistPinContextMenu>
     );
   }
 
-  // song / video — clicking plays the track. Right-click → context menu.
+  // song / video, or a "playlist" card that's really a long-form video
+  // (description-timestamp chapters) our /playlist/$id can't render —
+  // clicking plays it. Right-click → context menu.
+  const playItem: ShelfItem =
+    item.kind === "playlist" && item.playableVideoId
+      ? { ...item, kind: "song", id: item.playableVideoId }
+      : item;
   return (
-    <TrackContextMenu item={item}>
-      <button
-        type="button"
-        className={cn(CARD_CLASS, className)}
-        onClick={() => usePlaybackStore.getState().playNow(item)}
-      >
+    <TrackContextMenu item={playItem}>
+      <div className={cn(CARD_CLASS, "relative", className)}>
+        <button
+          type="button"
+          aria-label={`Play ${item.title}`}
+          className={overlayClass}
+          onClick={() => usePlaybackStore.getState().playNow(playItem)}
+        />
         {body}
-      </button>
+      </div>
     </TrackContextMenu>
   );
 }

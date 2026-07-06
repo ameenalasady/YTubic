@@ -35,6 +35,7 @@ import { Slider } from "@/components/ui/slider";
 import { Thumbnail } from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
+import { AlbumLink } from "@/components/shared/album-link";
 import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
 import { cn } from "@/lib/utils";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
@@ -552,6 +553,13 @@ export function PlayerBar({
                 Pick a track to start
               </span>
             )}
+            {track?.album ? (
+              <AlbumLink
+                albumId={track.albumId}
+                name={track.album}
+                className="block truncate text-xs text-muted-foreground"
+              />
+            ) : null}
           </div>
           {track ? (
             <LikeDislikeButtons videoId={track.videoId} className="-mt-1" />
