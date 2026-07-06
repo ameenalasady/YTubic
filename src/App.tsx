@@ -17,6 +17,12 @@ const router = createRouter({
   defaultPreload: "intent",
   defaultPreloadStaleTime: 0,
   context: { queryClient },
+  // Remember scroll position per history entry and restore it on
+  // back/forward. The app scrolls a single custom <main> (not the
+  // window), so point the "scroll to top on a fresh navigation" logic
+  // at it by its data-scroll-restoration-id.
+  scrollRestoration: true,
+  scrollToTopSelectors: ['[data-scroll-restoration-id="main-scroll"]'],
 });
 
 declare module "@tanstack/react-router" {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -90,14 +90,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   // clicking X and revert the persisted floating layout preference.
   const suppressRevertRef = useRef(false);
 
-  // Single shared scroller for the whole app — reset to top whenever the
-  // route changes so opening a playlist (or any other page) doesn't land
-  // on whatever scrollTop the previous page happened to leave behind.
-  const mainRef = useRef<HTMLElement>(null);
-  const pathname = useLocation({ select: (loc) => loc.pathname });
+  // Remember the last route across launches. The webview always cold-boots
+  // at "/", so on first mount we replace it with whatever page the user was
+  // last on. Scroll-to-top vs. scroll-restore for in-session navigation is
+  // handled by the router's scrollRestoration (see App.tsx), which keys the
+  // shared <main class="app-scroll"> scroller by its data-scroll-restoration-id.
+  const router = useRouter();
+  const href = useRouterState({ select: (s) => s.location.href });
   useEffect(() => {
-    if (mainRef.current) mainRef.current.scrollTop = 0;
-  }, [pathname]);
+    const saved = localStorage.getItem("ytm-last-route");
+    if (saved && saved !== "/" && saved !== router.state.location.href) {
+      router.history.replace(saved);
+    }
+    // Only on first mount — restoring later would fight the user's navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ytm-last-route", href);
+    } catch {
+      /* storage full / disabled — non-fatal */
+    }
+  }, [href]);
 
   // Open / close the floating player window. We only spawn it when
   // there's actually something to show — at first launch with mode
@@ -217,7 +231,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   to intrinsic width and defeats any nested `overflow-x`
                   (our horizontal carousels would never clip). */}
               <main
-                ref={mainRef}
+                data-scroll-restoration-id="main-scroll"
                 className="app-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
               >
                 {children}
