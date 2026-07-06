@@ -54,6 +54,26 @@ export function pickThumbnail(
 }
 
 /**
+ * Detect YouTube's "no thumbnail" placeholder.
+ *
+ * When a `/vi/{id}/{preset}.jpg` variant doesn't exist (very common for
+ * `maxresdefault` on older / low-view videos) `i.ytimg.com` replies
+ * **HTTP 404 but with a real 120×90 grey placeholder JPEG in the body**.
+ * Chromium treats the 404 as a load failure and fires `error`, so the
+ * `<img onError>` fallback chain kicks in. WebKitGTK — which is what the
+ * Tauri webview uses on Linux — instead decodes and paints that body and
+ * fires `load`, so `onError` never runs and the grey tile sticks.
+ *
+ * The placeholder is always exactly 120×90, whereas any genuine hi-res
+ * variant we upgrade to is far larger, so its natural size is a reliable
+ * cross-engine signal. Callers check this in `onLoad` and fall through as
+ * if the load had errored.
+ */
+function isYtPlaceholder(img: HTMLImageElement): boolean {
+  return img.naturalWidth <= 120 && img.naturalHeight <= 90;
+}
+
+/**
  * Pick the largest thumbnail variant the API shipped — used as the
  * safe fallback when a `high-res` upgrade attempt fails to load.
  */
@@ -153,6 +173,16 @@ export function Thumbnail({
         : fallback;
   const showLayered = !!(target && lowRes && target !== lowRes);
 
+  // Drop the current target down a tier. Shared by `onError` (Chromium's
+  // 404 path) and the WebKitGTK placeholder path so both engines converge
+  // on the same fallback. Never demotes `fallback` — it's the terminal
+  // tier and demoting it would loop.
+  const demoteTarget = () => {
+    if (target === fallback) return;
+    if (target === overrideHighRes) setOverrideErrored(true);
+    else if (target === resolvedUpgraded) setErrored(true);
+  };
+
   const sharedImgProps = {
     loading: "lazy",
     decoding: "async",
@@ -190,11 +220,13 @@ export function Thumbnail({
             {...sharedImgProps}
             src={target!}
             alt={alt}
-            onLoad={() => setHiResLoaded(true)}
-            onError={() => {
-              if (target === overrideHighRes) setOverrideErrored(true);
-              else if (target === resolvedUpgraded) setErrored(true);
+            onLoad={(e) => {
+              // WebKitGTK paints YT's 404 grey tile as a successful load —
+              // catch it here and demote instead of fading it in on top.
+              if (isYtPlaceholder(e.currentTarget)) demoteTarget();
+              else setHiResLoaded(true);
             }}
+            onError={demoteTarget}
             className={cn(
               "absolute inset-0 size-full object-cover transition-opacity duration-200",
               hiResLoaded ? "opacity-100" : "opacity-0",
@@ -206,10 +238,10 @@ export function Thumbnail({
           {...sharedImgProps}
           src={target}
           alt={alt}
-          onError={() => {
-            if (target === overrideHighRes) setOverrideErrored(true);
-            else if (target === resolvedUpgraded) setErrored(true);
+          onLoad={(e) => {
+            if (isYtPlaceholder(e.currentTarget)) demoteTarget();
           }}
+          onError={demoteTarget}
           className="size-full object-cover"
         />
       ) : null}
