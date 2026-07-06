@@ -10,6 +10,10 @@ import {
 } from "@/lib/store/track-source";
 import { pickThumbnail } from "@/components/shared/thumbnail";
 import { rememberTrack } from "@/lib/store/track-meta";
+import {
+  loadPlaybackPosition,
+  savePlaybackPosition,
+} from "@/lib/store/playback-position";
 
 /**
  * AudioEngine binds the playback store to a singleton HTMLAudioElement
@@ -26,6 +30,26 @@ export function useAudioEngine() {
   // auto-skip after a few consecutive failures so we don't burn through
   // the whole queue if e.g. the network is dead.
   const consecutiveErrorsRef = useRef(0);
+  // Resume point captured once at startup. Consumed when the restored track's
+  // media loads (see the stream-resolve effect), then nulled so later track
+  // changes start from 0.
+  const resumeRef = useRef(loadPlaybackPosition());
+
+  // Seed the progress bar with the saved position immediately (before the
+  // stream resolves) when the restored current track matches the saved one.
+  useEffect(() => {
+    const resume = resumeRef.current;
+    if (!resume) return;
+    const s = usePlaybackStore.getState();
+    const currentVideoId = s.index >= 0 ? s.queue[s.index]?.videoId : undefined;
+    if (currentVideoId === resume.videoId) {
+      s.setPosition(resume.position);
+    } else {
+      // Saved position belongs to a track that's no longer current — drop it.
+      resumeRef.current = null;
+    }
+    // Run once on mount against the rehydrated store.
+  }, []);
 
   // Ensure a single <audio> element exists.
   useEffect(() => {
@@ -48,16 +72,25 @@ export function useAudioEngine() {
     if (!el) return;
     const store = usePlaybackStore.getState;
 
+    const persistPosition = (force: boolean) => {
+      const s = store();
+      const vid = s.index >= 0 ? s.queue[s.index]?.videoId : undefined;
+      if (vid) savePlaybackPosition(vid, el.currentTime, force);
+    };
     let lastPositionSync = 0;
     const syncPosition = () => {
       const now = performance.now();
       if (now - lastPositionSync < 750) return;
       lastPositionSync = now;
       store().setPosition(el.currentTime);
+      persistPosition(false);
     };
     const flushPosition = () => {
       lastPositionSync = performance.now();
       store().setPosition(el.currentTime);
+      // Pause / seek / ended — snapshot the exact spot so a close right
+      // after doesn't lose the last few seconds.
+      persistPosition(true);
     };
     const onTimeUpdate = syncPosition;
     const onDurationChange = () => {
@@ -116,6 +149,11 @@ export function useAudioEngine() {
     el.addEventListener("pause", flushPosition);
     el.addEventListener("seeking", flushPosition);
     el.addEventListener("waiting", onWaiting);
+    // Final flush when the window is closing/hidden so we don't lose the
+    // last (throttled) few seconds of the current playhead.
+    const onHide = () => persistPosition(true);
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onHide);
     return () => {
       el.removeEventListener("timeupdate", onTimeUpdate);
       el.removeEventListener("durationchange", onDurationChange);
@@ -125,6 +163,8 @@ export function useAudioEngine() {
       el.removeEventListener("pause", flushPosition);
       el.removeEventListener("seeking", flushPosition);
       el.removeEventListener("waiting", onWaiting);
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onHide);
     };
   }, []);
 
@@ -186,6 +226,25 @@ export function useAudioEngine() {
         el.src = src;
         usePlaybackStore.getState().setStreamUrl(src);
         el.load();
+        // Resume the restored track at its saved playhead once metadata is
+        // ready (currentTime can't be set before the media is seekable).
+        // One-shot: only the first track after launch, only if it's the one
+        // the position was saved for.
+        const resume = resumeRef.current;
+        if (resume && resume.videoId === videoId) {
+          resumeRef.current = null;
+          const seekToResume = () => {
+            el.removeEventListener("loadedmetadata", seekToResume);
+            if (token !== resolveTokenRef.current) return;
+            try {
+              el.currentTime = resume.position;
+              usePlaybackStore.getState().setPosition(resume.position);
+            } catch {
+              /* not seekable yet — leave at 0 */
+            }
+          };
+          el.addEventListener("loadedmetadata", seekToResume);
+        }
         if (usePlaybackStore.getState().playing) {
           void el.play().catch((e) => {
             // AbortError is what we get when a pending play() is
