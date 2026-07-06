@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { fetchHomeFeedPage } from "@/lib/innertube/home";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircleIcon, Loader2Icon } from "lucide-react";
+import { AlertCircleIcon, Loader2Icon, RefreshCwIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -32,6 +33,19 @@ function HomePage() {
     [data?.pages],
   );
 
+  // Manual refresh: pull a fresh home feed (recommendations rotate on
+  // YT's side) and jump back to the top so the user lands on the new
+  // top shelves. `refetch` re-runs every loaded page, so the whole feed
+  // updates in place rather than just page one.
+  const refreshing = isFetching && !isFetchingNextPage;
+  const handleRefresh = () => {
+    if (refreshing) return;
+    document
+      .querySelector<HTMLElement>("main.app-scroll")
+      ?.scrollTo({ top: 0, behavior: "smooth" });
+    void refetch();
+  };
+
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = sentinelRef.current;
@@ -50,11 +64,20 @@ function HomePage() {
 
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex items-baseline justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-bold tracking-tight">Home</h1>
-        {isFetching && !isLoading && !isFetchingNextPage ? (
-          <span className="text-xs text-muted-foreground">Updating…</span>
-        ) : null}
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          aria-label="Refresh home feed"
+          className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-70"
+        >
+          <RefreshCwIcon
+            className={cn("size-3.5", refreshing && "animate-spin")}
+          />
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
       {error ? (
