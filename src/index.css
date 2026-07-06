@@ -216,6 +216,14 @@
       black calc(100% - 56px),
       rgba(0, 0, 0, var(--fade-r)) 100%
     );
+    /* Promote each masked carousel to its own compositor layer. A masked
+       element is otherwise re-rasterized (mask reapplied) on every frame of
+       the *outer* vertical scroll — WebKitGTK's compositor is much weaker
+       than Chromium's here, so a home feed of ~12 masked shelves stutters.
+       translateZ(0) caches the masked result and lets vertical scroll just
+       composite it. `contain: paint` bounds the invalidation to the strip. */
+    transform: translateZ(0);
+    contain: paint;
   }
 
   /* Top/bottom fade for the lyrics column. Applied only once the

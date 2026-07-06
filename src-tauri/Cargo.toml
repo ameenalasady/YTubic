@@ -54,6 +54,12 @@ aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
 
+# Linux-only: reach the underlying WebKitGTK WebView to flip settings wry
+# doesn't expose (smooth scrolling). Pinned to the same version wry already
+# pulls in so `PlatformWebview::inner()` hands back a matching type.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "=2.0.2"
+
 [dev-dependencies]
 # ServiceExt::oneshot for the stream-server routing test.
 tower = { version = "0.5", features = ["util"] }
