@@ -9,6 +9,7 @@ import {
   useTrackSourceStore,
 } from "@/lib/store/track-source";
 import { pickThumbnail } from "@/components/shared/thumbnail";
+import { rememberTrack } from "@/lib/store/track-meta";
 
 /**
  * AudioEngine binds the playback store to a singleton HTMLAudioElement
@@ -134,6 +135,13 @@ export function useAudioEngine() {
       return { videoId: t?.videoId, track: t, index: s.index };
     }),
   );
+
+  // Remember the current track's title/artists keyed by videoId. Playing a
+  // track is exactly what caches it on disk, so this keeps the Cache settings
+  // list able to show real titles instead of bare video ids.
+  useEffect(() => {
+    if (track?.videoId && track.title) rememberTrack(track);
+  }, [track]);
 
   // Substitute the streaming videoId via the user's per-track source
   // preference (Song ↔ Music Video). Subscribing here means the effect

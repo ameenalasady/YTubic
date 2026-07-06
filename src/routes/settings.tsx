@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -13,9 +13,11 @@ import {
   Trash2Icon,
   HeartIcon,
   ImageIcon,
+  SearchIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -28,6 +30,8 @@ import { resetInnertube } from "@/lib/innertube/client";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import { clearPrefetchMemo } from "@/lib/stream";
 import { removeAccount } from "@/lib/store/accounts";
+import { useTrackMetaStore, type TrackMeta } from "@/lib/store/track-meta";
+import { backfillTrackMeta } from "@/lib/track-meta-fetch";
 import type { ShelfItem } from "@/lib/innertube/types";
 import { cn } from "@/lib/utils";
 
@@ -256,8 +260,10 @@ function CacheCard({ loggedIn }: { loggedIn: boolean }) {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("newest");
+  const [search, setSearch] = useState("");
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const trackMeta = useTrackMetaStore((s) => s.byId);
 
   const cache = useQuery({
     queryKey: ["cache-list"],
@@ -304,18 +310,61 @@ function CacheCard({ loggedIn }: { loggedIn: boolean }) {
     return m;
   }, [liked.data]);
 
+  // Resolve a display title/artist for a videoId. Liked songs carry full
+  // ShelfItem metadata; everything else falls back to the play-time /
+  // oEmbed-backfilled track-meta store. Returns undefined when nothing is
+  // known yet (the row shows the bare id until the backfill lands).
+  const resolveMeta = useCallback(
+    (videoId: string): TrackMeta | undefined => {
+      const item = likedMeta.get(videoId);
+      if (item) {
+        return {
+          title: item.title,
+          subtitle: item.artists?.map((a) => a.name).join(", ") || item.subtitle,
+          artists: item.artists,
+        };
+      }
+      return trackMeta[videoId];
+    },
+    [likedMeta, trackMeta],
+  );
+
+  // Back-fill titles for cached tracks we don't recognise yet (typically
+  // ones cached before the track-meta store existed). Keyed on the cache
+  // set + liked set only — we read the meta store via getState so the
+  // effect doesn't re-fire on every backfill write. The fetch layer dedupes
+  // and skips already-known/failed ids.
+  useEffect(() => {
+    const known = useTrackMetaStore.getState().byId;
+    const unknown = (cache.data ?? [])
+      .map((e) => e.videoId)
+      .filter((id) => !likedMeta.has(id) && !known[id]);
+    if (unknown.length) void backfillTrackMeta(unknown);
+  }, [cache.data, likedMeta]);
+
   const filtered = useMemo(() => {
     let list = cache.data ?? [];
     if (filter === "liked") list = list.filter((e) => likedMeta.has(e.videoId));
     else if (filter === "notLiked")
       list = list.filter((e) => !likedMeta.has(e.videoId));
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter((e) => {
+        const meta = resolveMeta(e.videoId);
+        const haystack = [meta?.title, meta?.subtitle, e.videoId]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+    }
     const sorted = [...list].sort((a, b) => {
       if (sort === "newest") return b.modifiedSecs - a.modifiedSecs;
       if (sort === "oldest") return a.modifiedSecs - b.modifiedSecs;
       return b.size - a.size;
     });
     return sorted;
-  }, [cache.data, filter, sort, likedMeta]);
+  }, [cache.data, filter, sort, likedMeta, search, resolveMeta]);
 
   const totalBytes = (cache.data ?? []).reduce((a, e) => a + e.size, 0);
   const likedInCache = (cache.data ?? []).filter((e) =>
@@ -437,6 +486,16 @@ function CacheCard({ loggedIn }: { loggedIn: boolean }) {
             </div>
           )}
         </div>
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search cached tracks by title or artist…"
+            className="h-9 ps-8"
+            aria-label="Search cached tracks"
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <FilterChip
             active={filter === "all"}
@@ -496,14 +555,16 @@ function CacheCard({ loggedIn }: { loggedIn: boolean }) {
             <div className="p-4 text-sm text-muted-foreground">
               {cache.data?.length === 0
                 ? "Cache is empty — tracks land here as you play them."
-                : "No tracks match this filter."}
+                : search.trim()
+                  ? "No tracks match your search."
+                  : "No tracks match this filter."}
             </div>
           ) : (
             filtered.map((entry) => (
               <CacheRow
                 key={entry.videoId}
                 entry={entry}
-                meta={likedMeta.get(entry.videoId)}
+                meta={resolveMeta(entry.videoId)}
                 isLiked={likedMeta.has(entry.videoId)}
                 isDeleting={pending.has(entry.videoId)}
                 onDelete={() => deleteOne(entry.videoId)}
@@ -547,7 +608,7 @@ function CacheRow({
   onDelete,
 }: {
   entry: CacheEntry;
-  meta: ShelfItem | undefined;
+  meta: TrackMeta | undefined;
   isLiked: boolean;
   isDeleting: boolean;
   onDelete: () => void;
@@ -558,9 +619,7 @@ function CacheRow({
   const thumb = `https://i.ytimg.com/vi/${entry.videoId}/mqdefault.jpg`;
   const title = meta?.title ?? entry.videoId;
   const subtitle =
-    meta?.artists?.map((a) => a.name).join(", ") ||
-    meta?.subtitle ||
-    "";
+    meta?.artists?.map((a) => a.name).join(", ") || meta?.subtitle || "";
 
   return (
     <div
@@ -573,7 +632,16 @@ function CacheRow({
         src={thumb}
         alt=""
         loading="lazy"
+        referrerPolicy="no-referrer"
         className="h-10 w-14 shrink-0 rounded object-cover bg-muted"
+        onLoad={(e) => {
+          // WebKitGTK paints YouTube's 404 grey placeholder (120×90) as a
+          // successful load, so hide it by its tell-tale tiny size too.
+          const img = e.currentTarget;
+          if (img.naturalWidth <= 120 && img.naturalHeight <= 90) {
+            img.style.visibility = "hidden";
+          }
+        }}
         onError={(e) => {
           (e.target as HTMLImageElement).style.visibility = "hidden";
         }}
