@@ -45,7 +45,23 @@ windows-sys = { version = "0.59", features = [
     "Win32_Security_Cryptography",
 ] }
 
+# Linux (and other non-Windows) secure cookie storage: the cookie blob is
+# encrypted with AES-256-GCM and the random master key is kept in the
+# platform Secret Service (libsecret / gnome-keyring / kwallet) via `keyring`.
+[target.'cfg(not(windows))'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+
 [dev-dependencies]
 # ServiceExt::oneshot for the stream-server routing test.
 tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+strip = true
 

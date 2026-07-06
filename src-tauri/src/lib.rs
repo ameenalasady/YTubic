@@ -34,15 +34,26 @@ fn sanitize_video_id(id: &str) -> bool {
 
 /// Platform-native symmetric "encrypt with current user's credentials"
 /// primitive. On Windows we use DPAPI (CryptProtectData) — the blob is
-/// only decryptable by the same Windows user on the same machine. On
-/// other platforms we currently fall back to plaintext (FIXME: hook
-/// into macOS Keychain / libsecret when we ship beyond Windows).
+/// only decryptable by the same Windows user on the same machine.
 ///
-/// A fixed `ENTROPY` byte string is mixed in so a *different* app
-/// running as the same user can't trivially pass our blob to
-/// CryptUnprotectData and get our cookies out. This is a small hurdle
-/// against generic credential-stealer malware, not a real boundary —
-/// any attacker with our binary can read the entropy string.
+/// On other platforms (Linux/BSD/macOS) we encrypt the blob with
+/// AES-256-GCM and keep the random 256-bit master key in the platform
+/// Secret Service (libsecret / gnome-keyring / KWallet / macOS
+/// Keychain) via the `keyring` crate. The key is user-scoped and
+/// unlocked with the login session, mirroring the DPAPI trust model:
+/// the on-disk `cookies.enc` is opaque ciphertext and only the current
+/// user's unlocked keyring can recover the key.
+///
+/// When no Secret Service is reachable (headless box, locked keyring,
+/// no D-Bus) we degrade to plaintext so sign-in still works — the blob
+/// is written with a scheme byte marking it as plaintext so reads stay
+/// unambiguous. This matches the crate's historical no-crash guarantee.
+///
+/// A fixed `ENTROPY` byte string is mixed into the Windows DPAPI blob
+/// so a *different* app running as the same user can't trivially pass
+/// our blob to CryptUnprotectData and get our cookies out. This is a
+/// small hurdle against generic credential-stealer malware, not a real
+/// boundary — any attacker with our binary can read the entropy string.
 mod secure_store {
     #[cfg(windows)]
     // Keeps the historical "ytm-native" tag on purpose: this string is
@@ -124,14 +135,132 @@ mod secure_store {
         }
     }
 
+    // ---- Non-Windows: AES-256-GCM with the key in the Secret Service ----
+
+    /// Self-describing blob header. Legacy blobs written by the old
+    /// plaintext fallback have no header and are detected by the absence
+    /// of this magic, so old `cookies.enc` files keep decrypting.
+    #[cfg(not(windows))]
+    const MAGIC: &[u8; 4] = b"YTSS";
+    #[cfg(not(windows))]
+    const VERSION: u8 = 1;
+    #[cfg(not(windows))]
+    const SCHEME_PLAINTEXT: u8 = 0;
+    #[cfg(not(windows))]
+    const SCHEME_AES_GCM: u8 = 1;
+    #[cfg(not(windows))]
+    const NONCE_LEN: usize = 12;
+
+    /// Fetch the AES-256 master key from the Secret Service, creating and
+    /// persisting a fresh random one on first use. Returns `Err` when no
+    /// Secret Service backend is reachable, which callers treat as
+    /// "fall back to plaintext".
+    #[cfg(not(windows))]
+    fn master_key() -> Result<[u8; 32], String> {
+        use base64::Engine as _;
+        use keyring::Entry;
+
+        let entry = Entry::new("ytubic", "cookies-master-key")
+            .map_err(|e| format!("keyring entry: {e}"))?;
+
+        match entry.get_password() {
+            Ok(b64) => {
+                let raw = base64::engine::general_purpose::STANDARD
+                    .decode(b64.trim())
+                    .map_err(|e| format!("decode stored key: {e}"))?;
+                let key: [u8; 32] = raw
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "stored key has wrong length".to_string())?;
+                Ok(key)
+            }
+            Err(keyring::Error::NoEntry) => {
+                use rand::RngCore as _;
+                let mut key = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                let b64 = base64::engine::general_purpose::STANDARD.encode(key);
+                entry
+                    .set_password(&b64)
+                    .map_err(|e| format!("store new key: {e}"))?;
+                Ok(key)
+            }
+            Err(e) => Err(format!("read key: {e}")),
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn wrap(scheme: u8, payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(MAGIC.len() + 2 + payload.len());
+        out.extend_from_slice(MAGIC);
+        out.push(VERSION);
+        out.push(scheme);
+        out.extend_from_slice(payload);
+        out
+    }
+
     #[cfg(not(windows))]
     pub fn encrypt(plain: &[u8]) -> Result<Vec<u8>, String> {
-        Ok(plain.to_vec())
+        use aes_gcm::aead::{Aead, KeyInit};
+        use aes_gcm::{Aes256Gcm, Nonce};
+        use rand::RngCore as _;
+
+        let key = match master_key() {
+            Ok(k) => k,
+            Err(e) => {
+                // No unlocked Secret Service — degrade to plaintext so the
+                // user can still sign in. Marked so reads don't guess.
+                eprintln!(
+                    "[auth] secret service unavailable ({e}); storing cookies unencrypted"
+                );
+                return Ok(wrap(SCHEME_PLAINTEXT, plain));
+            }
+        };
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| format!("aes init: {e}"))?;
+        let mut nonce_bytes = [0u8; NONCE_LEN];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let ciphertext = cipher
+            .encrypt(nonce, plain)
+            .map_err(|e| format!("aes encrypt: {e}"))?;
+
+        let mut payload = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+        payload.extend_from_slice(&nonce_bytes);
+        payload.extend_from_slice(&ciphertext);
+        Ok(wrap(SCHEME_AES_GCM, &payload))
     }
 
     #[cfg(not(windows))]
     pub fn decrypt(encrypted: &[u8]) -> Result<Vec<u8>, String> {
-        Ok(encrypted.to_vec())
+        use aes_gcm::aead::{Aead, KeyInit};
+        use aes_gcm::{Aes256Gcm, Nonce};
+
+        // Legacy blob with no header: old plaintext fallback wrote the
+        // Netscape jar verbatim. Return it as-is.
+        if encrypted.len() < MAGIC.len() + 2 || &encrypted[..MAGIC.len()] != MAGIC {
+            return Ok(encrypted.to_vec());
+        }
+        let scheme = encrypted[MAGIC.len() + 1];
+        let payload = &encrypted[MAGIC.len() + 2..];
+
+        match scheme {
+            SCHEME_PLAINTEXT => Ok(payload.to_vec()),
+            SCHEME_AES_GCM => {
+                if payload.len() < NONCE_LEN {
+                    return Err("aes blob too short".into());
+                }
+                let key = master_key()?;
+                let cipher = Aes256Gcm::new_from_slice(&key)
+                    .map_err(|e| format!("aes init: {e}"))?;
+                let (nonce_bytes, ciphertext) = payload.split_at(NONCE_LEN);
+                let nonce = Nonce::from_slice(nonce_bytes);
+                cipher
+                    .decrypt(nonce, ciphertext)
+                    .map_err(|e| format!("aes decrypt: {e}"))
+            }
+            other => Err(format!("unknown secure-store scheme {other}")),
+        }
     }
 }
 
@@ -2213,5 +2342,40 @@ mod tests {
                 "no token must not reach the handler"
             );
         });
+    }
+
+    // Legacy `cookies.enc` files written by the old plaintext fallback have
+    // no header; decrypt must pass them straight through so existing
+    // sign-ins survive the upgrade to the encrypted format.
+    #[cfg(not(windows))]
+    #[test]
+    fn legacy_headerless_blob_decrypts_verbatim() {
+        let legacy = b"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSAPISID\txyz\n";
+        let out = super::secure_store::decrypt(legacy).expect("legacy passthrough");
+        assert_eq!(out, legacy, "headerless blob must survive untouched");
+    }
+
+    // A short blob that can't hold a header is treated as legacy too.
+    #[cfg(not(windows))]
+    #[test]
+    fn short_blob_is_treated_as_legacy() {
+        let tiny = b"hi";
+        let out = super::secure_store::decrypt(tiny).expect("short passthrough");
+        assert_eq!(out, tiny);
+    }
+
+    // Live end-to-end roundtrip against the real Secret Service. Ignored by
+    // default because CI runners have no unlocked keyring; run locally with
+    // `cargo test -- --ignored secure_store_roundtrip`.
+    #[cfg(not(windows))]
+    #[test]
+    #[ignore]
+    fn secure_store_roundtrip_uses_keyring() {
+        let plain = b"# Netscape HTTP Cookie File\n.google.com\tTRUE\t/\tTRUE\t0\tSAPISID\tsecret\n";
+        let enc = super::secure_store::encrypt(plain).expect("encrypt");
+        assert_ne!(&enc[..], &plain[..], "ciphertext must not equal plaintext");
+        assert_eq!(&enc[..4], b"YTSS", "blob must carry the header magic");
+        let dec = super::secure_store::decrypt(&enc).expect("decrypt");
+        assert_eq!(dec, plain, "roundtrip must recover the exact bytes");
     }
 }
