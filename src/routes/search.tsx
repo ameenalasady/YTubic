@@ -189,7 +189,9 @@ function FilterBar({ filter }: { filter: SearchFilter }) {
     const el = scrollRef.current;
     if (!el) return;
     const RAMP = 48;
-    const update = () => {
+    let raf = 0;
+    const updateNow = () => {
+      raf = 0;
       const left = el.scrollLeft;
       const right = el.scrollWidth - el.clientWidth - left;
       el.style.setProperty("--fade-l", Math.max(0, 1 - left / RAMP).toFixed(3));
@@ -198,12 +200,17 @@ function FilterBar({ filter }: { filter: SearchFilter }) {
         Math.max(0, 1 - right / RAMP).toFixed(3),
       );
     };
-    update();
+    const update = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(updateNow);
+    };
+    updateNow();
     el.addEventListener("scroll", update, { passive: true });
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => {
       el.removeEventListener("scroll", update);
+      if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
     };
   }, []);
@@ -581,6 +588,11 @@ function FilterResults({
 // library doesn't fan out into dozens of continuation calls on every search.
 const LIBRARY_MAX_PAGES = 20;
 
+type LibraryTrackSearchEntry = {
+  track: ShelfItem;
+  haystack: string;
+};
+
 type LibrarySearchState = {
   isLoggedIn: boolean;
   loggedInKnown: boolean;
@@ -617,22 +629,30 @@ function useLibrarySearch(query: string, enabled: boolean): LibrarySearchState {
         token = next.continuationToken;
         pages += 1;
       }
-      return { tracks, truncated: Boolean(token) };
+      const searchEntries = tracks.map((track): LibraryTrackSearchEntry => {
+        const haystack = [
+          track.title,
+          track.subtitle,
+          track.album,
+          ...(track.artists?.map((a) => a.name) ?? []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return { track, haystack };
+      });
+      return { tracks, searchEntries, truncated: Boolean(token) };
     },
   });
 
   const needle = query.toLowerCase();
   const matches = useMemo(() => {
-    const all = lib.data?.tracks ?? [];
-    if (!needle) return all;
-    return all.filter(
-      (t) =>
-        t.title.toLowerCase().includes(needle) ||
-        (t.subtitle?.toLowerCase().includes(needle) ?? false) ||
-        (t.album?.toLowerCase().includes(needle) ?? false) ||
-        (t.artists?.some((a) => a.name.toLowerCase().includes(needle)) ??
-          false),
-    );
+    const data = lib.data;
+    if (!data) return [];
+    if (!needle) return data.tracks;
+    return data.searchEntries
+      .filter((entry) => entry.haystack.includes(needle))
+      .map((entry) => entry.track);
   }, [lib.data, needle]);
 
   return {

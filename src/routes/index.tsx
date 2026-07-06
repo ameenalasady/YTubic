@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { fetchHomeFeedPage } from "@/lib/innertube/home";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,7 +27,10 @@ function HomePage() {
     getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 
-  const shelves = data?.pages.flatMap((p) => p.shelves) ?? [];
+  const shelves = useMemo(
+    () => data?.pages.flatMap((p) => p.shelves) ?? [],
+    [data?.pages],
+  );
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {

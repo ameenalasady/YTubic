@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { AlertCircleIcon, Loader2Icon } from "lucide-react";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
@@ -47,7 +47,10 @@ export function FeedView({
     getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 
-  const shelves = data?.pages.flatMap((p) => p.shelves) ?? [];
+  const shelves = useMemo(
+    () => data?.pages.flatMap((p) => p.shelves) ?? [],
+    [data?.pages],
+  );
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {

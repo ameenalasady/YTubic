@@ -22,7 +22,7 @@ export const queryClient = new QueryClient({
 export const persister = createSyncStoragePersister({
   storage: typeof window !== "undefined" ? window.localStorage : undefined,
   key: "ytubic-query-cache",
-  throttleTime: 1000,
+  throttleTime: 5000,
 });
 
 export const PERSIST_MAX_AGE = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -34,9 +34,6 @@ export function shouldPersistQuery(queryKey: readonly unknown[]): boolean {
     head === "home" ||
     head === "artist" ||
     head === "album" ||
-    // The playlist route keys its data as "playlist-pages" (not "playlist"),
-    // so the old entry never matched and playlists were never persisted.
-    head === "playlist-pages" ||
     // Persisted so heart fills are correct on reload — fetching the
     // full list is 7+ continuation round-trips, you don't want to pay
     // that on every cold start.
@@ -60,7 +57,7 @@ export function shouldPersistQuery(queryKey: readonly unknown[]): boolean {
  * costs ~5 s on first cold start instead of frame-blocking serializes
  * forever after.
  */
-const MAX_PERSIST_BYTES_PER_QUERY = 500 * 1024;
+const MAX_PERSIST_BYTES_PER_QUERY = 250 * 1024;
 
 /**
  * Cheap-but-meaningful size estimate for a query's `data`. We don't

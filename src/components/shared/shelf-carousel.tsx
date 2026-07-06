@@ -27,7 +27,9 @@ export function ShelfCarousel({ shelf, action }: Props) {
     // scrolled past FADE_RAMP px — gives a smooth fade-in instead of
     // a snap when scrolling starts.
     const FADE_RAMP = 56;
-    const updateFade = () => {
+    let fadeRaf = 0;
+    const updateFadeNow = () => {
+      fadeRaf = 0;
       const distLeft = el.scrollLeft;
       const distRight = el.scrollWidth - el.clientWidth - el.scrollLeft;
       const alphaL = Math.max(0, 1 - distLeft / FADE_RAMP);
@@ -35,7 +37,11 @@ export function ShelfCarousel({ shelf, action }: Props) {
       el.style.setProperty("--fade-l", alphaL.toFixed(3));
       el.style.setProperty("--fade-r", alphaR.toFixed(3));
     };
-    updateFade();
+    const updateFade = () => {
+      if (fadeRaf) return;
+      fadeRaf = requestAnimationFrame(updateFadeNow);
+    };
+    updateFadeNow();
     el.addEventListener("scroll", updateFade, { passive: true });
     const ro = new ResizeObserver(updateFade);
     ro.observe(el);
@@ -110,6 +116,7 @@ export function ShelfCarousel({ shelf, action }: Props) {
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("pointercancel", onPointerUp);
       el.removeEventListener("scroll", updateFade);
+      if (fadeRaf) cancelAnimationFrame(fadeRaf);
       ro.disconnect();
     };
   }, []);

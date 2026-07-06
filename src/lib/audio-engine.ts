@@ -47,15 +47,25 @@ export function useAudioEngine() {
     if (!el) return;
     const store = usePlaybackStore.getState;
 
-    const onTimeUpdate = () => {
+    let lastPositionSync = 0;
+    const syncPosition = () => {
+      const now = performance.now();
+      if (now - lastPositionSync < 750) return;
+      lastPositionSync = now;
       store().setPosition(el.currentTime);
     };
+    const flushPosition = () => {
+      lastPositionSync = performance.now();
+      store().setPosition(el.currentTime);
+    };
+    const onTimeUpdate = syncPosition;
     const onDurationChange = () => {
       if (Number.isFinite(el.duration) && el.duration > 0) {
         store().setDuration(el.duration);
       }
     };
     const onEnded = () => {
+      flushPosition();
       store().next();
     };
     const onError = () => {
@@ -102,6 +112,8 @@ export function useAudioEngine() {
     el.addEventListener("ended", onEnded);
     el.addEventListener("error", onError);
     el.addEventListener("playing", onPlaying);
+    el.addEventListener("pause", flushPosition);
+    el.addEventListener("seeking", flushPosition);
     el.addEventListener("waiting", onWaiting);
     return () => {
       el.removeEventListener("timeupdate", onTimeUpdate);
@@ -109,6 +121,8 @@ export function useAudioEngine() {
       el.removeEventListener("ended", onEnded);
       el.removeEventListener("error", onError);
       el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("pause", flushPosition);
+      el.removeEventListener("seeking", flushPosition);
       el.removeEventListener("waiting", onWaiting);
     };
   }, []);
@@ -232,6 +246,7 @@ export function useAudioEngine() {
     if (!el || pendingSeek === undefined) return;
     try {
       el.currentTime = pendingSeek;
+      usePlaybackStore.getState().setPosition(pendingSeek);
     } catch {
       /* seek failed — non-fatal */
     }
@@ -401,6 +416,7 @@ export function useAudioEngine() {
   // Position state — lets the OS show an accurate progress bar.
   const duration = usePlaybackStore((s) => s.duration);
   const position = usePlaybackStore((s) => s.position);
+  const lastMediaSessionPositionRef = useRef(0);
   useEffect(() => {
     if (
       typeof navigator === "undefined" ||
@@ -409,6 +425,9 @@ export function useAudioEngine() {
     )
       return;
     if (!Number.isFinite(duration) || duration <= 0) return;
+    const now = performance.now();
+    if (now - lastMediaSessionPositionRef.current < 1500) return;
+    lastMediaSessionPositionRef.current = now;
     try {
       navigator.mediaSession.setPositionState({
         duration,

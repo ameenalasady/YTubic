@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PlayIcon, PauseIcon, Volume2Icon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -138,7 +138,15 @@ export function TrackList({
     getItemKey: (i) => `${tracks[i].id}:${i}`,
   });
 
-  const showAlbum = !hideAlbum && tracks.some((t) => t.album);
+  const showAlbum = useMemo(
+    () => !hideAlbum && tracks.some((t) => t.album),
+    [hideAlbum, tracks],
+  );
+  const activeIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    tracks.forEach((t, i) => map.set(t.id, i));
+    return map;
+  }, [tracks]);
 
   // Grid template shared by the header row and every track row so the
   // columns line up in a real "table" layout.
@@ -169,9 +177,7 @@ export function TrackList({
   // active row's absolute Y position so the existing scroll-into-view
   // logic keeps working without coupling JumpToCurrent to the
   // virtualizer.
-  const activeIndex = active
-    ? tracks.findIndex((t) => t.id === active.videoId)
-    : -1;
+  const activeIndex = active ? (activeIndexById.get(active.videoId) ?? -1) : -1;
   const items = virtualizer.getVirtualItems();
   const activeInWindow =
     activeIndex >= 0 && items.some((vi) => vi.index === activeIndex);

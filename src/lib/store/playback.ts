@@ -1,5 +1,5 @@
 import { create, type StateCreator } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { emit } from "@tauri-apps/api/event";
 import type { ShelfItem, Thumbnail } from "@/lib/innertube/types";
 import { isFloatingPlayerWindow } from "@/lib/floating-player";
@@ -102,6 +102,48 @@ function fisherYates<T>(arr: readonly T[]): T[] {
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;
+}
+
+const MAX_PERSISTED_QUEUE_TRACKS = 300;
+
+function compactPersistedQueue(queue: QueueTrack[], index: number): QueueTrack[] {
+  if (queue.length <= MAX_PERSISTED_QUEUE_TRACKS) return queue;
+  const safeIndex = Math.max(0, Math.min(index, queue.length - 1));
+  const before = Math.floor((MAX_PERSISTED_QUEUE_TRACKS - 1) / 2);
+  const start = Math.max(0, safeIndex - before);
+  return queue.slice(start, start + MAX_PERSISTED_QUEUE_TRACKS);
+}
+
+function persistedQueueIndex(queue: QueueTrack[], index: number): number {
+  if (queue.length <= MAX_PERSISTED_QUEUE_TRACKS) return index;
+  const safeIndex = Math.max(0, Math.min(index, queue.length - 1));
+  const before = Math.floor((MAX_PERSISTED_QUEUE_TRACKS - 1) / 2);
+  return safeIndex - Math.max(0, safeIndex - before);
+}
+
+function createDebouncedStorage(delay = 1000): StateStorage | undefined {
+  if (typeof window === "undefined") return undefined;
+  const pending = new Map<string, { value: string; timer: number }>();
+  return {
+    getItem: (name) => window.localStorage.getItem(name),
+    setItem: (name, value) => {
+      const existing = pending.get(name);
+      if (existing) window.clearTimeout(existing.timer);
+      const timer = window.setTimeout(() => {
+        const item = pending.get(name);
+        if (!item) return;
+        window.localStorage.setItem(name, item.value);
+        pending.delete(name);
+      }, delay);
+      pending.set(name, { value, timer });
+    },
+    removeItem: (name) => {
+      const existing = pending.get(name);
+      if (existing) window.clearTimeout(existing.timer);
+      pending.delete(name);
+      window.localStorage.removeItem(name);
+    },
+  };
 }
 
 const playbackStateCreator: StateCreator<PlaybackState> = (set, get) => ({
@@ -407,9 +449,10 @@ export const usePlaybackStore = isFloatingPlayerWindow()
         // Volatile fields (position, status, streamUrl, error,
         // pendingSeek) and `playing` are reset on rehydrate so a fresh
         // launch never auto-blasts audio at you.
+        storage: createJSONStorage(() => createDebouncedStorage()!),
         partialize: (s) => ({
-          queue: s.queue,
-          index: s.index,
+          queue: compactPersistedQueue(s.queue, s.index),
+          index: persistedQueueIndex(s.queue, s.index),
           shuffle: s.shuffle,
           repeat: s.repeat,
           autoRadio: s.autoRadio,

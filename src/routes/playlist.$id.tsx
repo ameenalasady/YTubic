@@ -47,6 +47,8 @@ export const Route = createFileRoute("/playlist/$id")({
 
 type AnyPage = PlaylistFirstPage | PlaylistNextPage;
 
+const EAGER_LOAD_PAGE_LIMIT = 5;
+
 function PlaylistPageView() {
   const { id } = Route.useParams();
 
@@ -73,8 +75,10 @@ function PlaylistPageView() {
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const pages = query.data?.pages ?? [];
+  const pages = useMemo(() => query.data?.pages ?? [], [query.data?.pages]);
   const header = pages[0] as PlaylistFirstPage | undefined;
+  const eagerLoadPageCountRef = useRef(0);
+  const fetchNextPage = query.fetchNextPage;
   const tracks = useMemo(() => pages.flatMap((p) => p.tracks), [pages]);
   const sortedTracks = useMemo(
     () => sortTracks(tracks, sortMode),
@@ -111,7 +115,7 @@ function PlaylistPageView() {
       (entries) => {
         for (const e of entries) {
           if (e.isIntersecting && !query.isFetchingNextPage) {
-            query.fetchNextPage();
+            fetchNextPage();
           }
         }
       },
@@ -119,7 +123,7 @@ function PlaylistPageView() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage, query.error]);
+  }, [query.hasNextPage, query.isFetchingNextPage, fetchNextPage, query.error]);
 
   // When the user picks any non-default sort, eagerly drain all
   // continuations so the sort applies to the whole playlist, not just
@@ -130,19 +134,27 @@ function PlaylistPageView() {
   // pause the effect re-fires immediately on every page success and
   // hammers the InnerTube edge synchronously.
   useEffect(() => {
+    eagerLoadPageCountRef.current = 0;
+  }, [sortMode, normalizedQuery, id]);
+
+  useEffect(() => {
     if (sortMode === "default" && !normalizedQuery) return;
     if (!query.hasNextPage) return;
     if (query.isFetchingNextPage) return;
+    if (eagerLoadPageCountRef.current >= EAGER_LOAD_PAGE_LIMIT) return;
     // Don't keep draining after an error — it would retry every 250 ms.
     if (query.error) return;
-    const t = setTimeout(() => query.fetchNextPage(), 250);
+    const t = setTimeout(() => {
+      eagerLoadPageCountRef.current += 1;
+      fetchNextPage();
+    }, 250);
     return () => clearTimeout(t);
   }, [
     sortMode,
     normalizedQuery,
     query.hasNextPage,
     query.isFetchingNextPage,
-    query.fetchNextPage,
+    fetchNextPage,
     query.error,
   ]);
 
@@ -225,10 +237,14 @@ function PlaylistPageView() {
         </div>
         {(sortMode !== "default" || normalizedQuery) && query.hasNextPage ? (
           <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2Icon className="size-3 animate-spin" />
-            {normalizedQuery
-              ? "Loading full playlist for search…"
-              : "Loading full playlist for sort…"}
+            {query.isFetchingNextPage ? (
+              <Loader2Icon className="size-3 animate-spin" />
+            ) : null}
+            {eagerLoadPageCountRef.current >= EAGER_LOAD_PAGE_LIMIT
+              ? "Showing loaded tracks. Scroll to load more."
+              : normalizedQuery
+                ? "Loading more tracks for search…"
+                : "Loading more tracks for sort…"}
           </span>
         ) : null}
       </div>
