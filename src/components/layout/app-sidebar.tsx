@@ -53,6 +53,7 @@ import {
 import { usePinned, usePinnedPlaylistsStore } from "@/lib/store/pinned-playlists";
 import { openChannelPicker } from "@/lib/store/channel-picker";
 import { openSettings } from "@/lib/store/settings-dialog";
+import { UpdateBanner } from "@/components/layout/update-banner";
 import { fetchAccountInfo } from "@/lib/innertube/account";
 import { resetInnertube } from "@/lib/innertube/client";
 import { usePremiumStore } from "@/lib/store/premium";
@@ -190,6 +191,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <UpdateBanner />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
