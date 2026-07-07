@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { listen } from "@tauri-apps/api/event";
-import { fetchRadio } from "@/lib/innertube/radio";
+import { fetchRadio, fetchShuffleContinuation } from "@/lib/innertube/radio";
 import { prefetchStream, streamUrlFor } from "@/lib/stream";
 import { usePlaybackStore, type QueueTrack } from "@/lib/store/playback";
 import {
@@ -447,6 +447,7 @@ export function useAudioEngine() {
   // Auto-extend the queue with radio tracks when we're near the end, so
   // playback continues past the explicit queue.
   const autoRadio = usePlaybackStore((s) => s.autoRadio);
+  const stationContinuation = usePlaybackStore((s) => s.stationContinuation);
   const { qLen, qIndex, seedVideoId } = usePlaybackStore(
     useShallow((s) => ({
       qLen: s.queue.length,
@@ -455,9 +456,47 @@ export function useAudioEngine() {
         s.index >= 0 ? s.queue[s.index]?.videoId : undefined,
     })),
   );
+
+  // A shuffle station (artist "Shuffle") only queues its first page up front;
+  // page in the next one a few tracks before the end so the shuffle keeps
+  // flowing seamlessly instead of running dry and cutting to radio.
+  const STATION_EXTEND_LOOKAHEAD = 3;
+  const stationFetchingRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!stationContinuation || qIndex < 0) return;
+    if (qIndex < qLen - STATION_EXTEND_LOOKAHEAD) return;
+    if (stationFetchingRef.current === stationContinuation) return;
+    stationFetchingRef.current = stationContinuation;
+    fetchShuffleContinuation(stationContinuation)
+      .then(({ tracks, continuation }) => {
+        const s = usePlaybackStore.getState();
+        // Stale guard: the token may have changed (a new queue was loaded,
+        // or a prior extension already advanced past this page).
+        if (s.stationContinuation !== stationContinuation) return;
+        const existing = new Set(s.queue.map((t) => t.videoId));
+        const fresh = tracks.filter((t) => !existing.has(t.id));
+        if (fresh.length) {
+          s.appendToQueue(fresh);
+          // Advance to the next page's token so the station can keep going.
+          s.setStationContinuation(continuation);
+        } else {
+          // Page only replayed tracks we already have (RDAO continuations
+          // overlap heavily near the tail) — stop extending rather than
+          // chase dupe pages, and let auto-radio take over if enabled.
+          s.setStationContinuation(undefined);
+        }
+      })
+      .catch(() => {
+        // Allow a retry on transient failure.
+        stationFetchingRef.current = undefined;
+      });
+  }, [stationContinuation, qIndex, qLen]);
+
   const radioFetchedForRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!autoRadio) return;
+    // A shuffle station extends itself (above); don't also pile on radio.
+    if (stationContinuation) return;
     if (qIndex < 0 || !seedVideoId) return;
     // Only fire when the current track is the last queued one.
     if (qIndex < qLen - 1) return;
@@ -478,7 +517,7 @@ export function useAudioEngine() {
         // Allow a retry on transient failure.
         radioFetchedForRef.current = undefined;
       });
-  }, [autoRadio, qIndex, qLen, seedVideoId]);
+  }, [autoRadio, stationContinuation, qIndex, qLen, seedVideoId]);
 
   // Position state — lets the OS show an accurate progress bar.
   const duration = usePlaybackStore((s) => s.duration);

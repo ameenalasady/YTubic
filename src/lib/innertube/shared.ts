@@ -46,7 +46,7 @@ function captureVisitorData(response: YtNode): void {
   if (typeof vd === "string" && vd.length > 0) saveVisitorData(vd);
 }
 
-function buildContext(): {
+function buildContext(anonymous = false): {
   client: Record<string, unknown>;
   user: unknown;
   request: unknown;
@@ -61,7 +61,10 @@ function buildContext(): {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36,gzip(gfe)",
     originalUrl: "https://music.youtube.com/",
   };
-  const visitor = loadVisitorData();
+  // Anonymous callers deliberately omit visitorData: with a stable token
+  // YTM serves personalized *and deterministic* responses (identical every
+  // call), which is wrong for a shuffle that should vary each time.
+  const visitor = anonymous ? null : loadVisitorData();
   if (visitor) client.visitorData = visitor;
   return {
     client,
@@ -168,20 +171,32 @@ async function authHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
+export type InnertubeRequestOptions = {
+  /**
+   * Send the request with no identity at all — no auth cookies, no
+   * visitorData. Used for artist-shuffle stations, where a stable
+   * visitorData otherwise freezes YTM's shuffle into one fixed order.
+   * The response's fresh visitorData is *not* captured, so it can't
+   * clobber the app's persistent token.
+   */
+  anonymous?: boolean;
+};
+
 export async function innertubePost(
   endpoint: string,
   body: Record<string, unknown>,
+  opts: InnertubeRequestOptions = {},
 ): Promise<YtNode> {
   const url = `https://music.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false`;
-  const auth = await authHeaders();
-  const visitor = loadVisitorData();
+  const auth = opts.anonymous ? {} : await authHeaders();
+  const visitor = opts.anonymous ? null : loadVisitorData();
   const visitorHeader: Record<string, string> = visitor
     ? { "X-Goog-Visitor-Id": visitor }
     : {};
   const res = await tauriFetch(url, {
     method: "POST",
     headers: { ...BASE_HEADERS, ...visitorHeader, ...auth },
-    body: JSON.stringify({ context: buildContext(), ...body }),
+    body: JSON.stringify({ context: buildContext(opts.anonymous), ...body }),
   });
 
   if (!res.ok) {
@@ -192,7 +207,7 @@ export async function innertubePost(
   }
 
   const json = (await res.json()) as YtNode;
-  captureVisitorData(json);
+  if (!opts.anonymous) captureVisitorData(json);
   return json;
 }
 
@@ -208,8 +223,11 @@ export function rawSearch(query: string, params?: string): Promise<YtNode> {
   return innertubePost("search", body);
 }
 
-export function rawNext(body: Record<string, unknown>): Promise<YtNode> {
-  return innertubePost("next", body);
+export function rawNext(
+  body: Record<string, unknown>,
+  opts?: InnertubeRequestOptions,
+): Promise<YtNode> {
+  return innertubePost("next", body, opts);
 }
 
 /**

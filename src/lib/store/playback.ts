@@ -49,6 +49,14 @@ export type PlaybackState = {
   /** When true, auto-append radio tracks to the queue when the last one ends. */
   autoRadio: boolean;
 
+  /**
+   * Continuation token for the shuffle station backing the current queue, if
+   * any. While set, the player extends the queue by paging this station
+   * (see `fetchShuffleContinuation`) as it nears the end, instead of falling
+   * back to auto-radio. Cleared whenever a new, non-station queue is loaded.
+   */
+  stationContinuation?: string;
+
   // Actions — queue
   playNow: (track: QueueTrack | ShelfItem, extras?: QueueTrack[]) => void;
   setQueue: (tracks: QueueTrack[], startIndex?: number) => void;
@@ -60,6 +68,8 @@ export type PlaybackState = {
   moveTrack: (from: number, to: number) => void;
   clearQueue: () => void;
   setAutoRadio: (on: boolean) => void;
+  /** Set (or clear) the shuffle-station continuation token for the queue. */
+  setStationContinuation: (token?: string) => void;
 
   // Actions — transport
   toggle: () => void;
@@ -155,6 +165,7 @@ const playbackStateCreator: StateCreator<PlaybackState> = (set, get) => ({
   shuffle: false,
   repeat: "off",
   autoRadio: false,
+  stationContinuation: undefined,
 
   status: "idle",
   error: undefined,
@@ -186,6 +197,7 @@ const playbackStateCreator: StateCreator<PlaybackState> = (set, get) => ({
       duration: mapped.duration ?? 0,
       playing: true,
       error: undefined,
+      stationContinuation: undefined,
     });
   },
 
@@ -207,6 +219,7 @@ const playbackStateCreator: StateCreator<PlaybackState> = (set, get) => ({
       duration: queue[i].duration ?? 0,
       playing: true,
       error: undefined,
+      stationContinuation: undefined,
     });
   },
 
@@ -319,10 +332,12 @@ const playbackStateCreator: StateCreator<PlaybackState> = (set, get) => ({
       playing: false,
       position: 0,
       duration: 0,
+      stationContinuation: undefined,
     });
   },
 
   setAutoRadio: (on) => set({ autoRadio: on }),
+  setStationContinuation: (token) => set({ stationContinuation: token }),
 
   toggle: () => {
     const { queue, playing } = get();

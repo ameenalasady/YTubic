@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
 import { toast } from "sonner";
 import { fetchArtist } from "@/lib/innertube/artist";
-import { fetchWatchQueue } from "@/lib/innertube/radio";
+import { fetchArtistShuffle } from "@/lib/innertube/radio";
 import { usePlaybackStore } from "@/lib/store/playback";
 import { EntityHeader } from "@/components/shared/entity-header";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
@@ -19,16 +19,6 @@ export const Route = createFileRoute("/artist/$id")({
       queryFn: () => fetchArtist(params.id),
     }),
 });
-
-/** Fisher-Yates shuffle — returns a new array, leaves the input alone. */
-function shuffleTracks<T>(tracks: readonly T[]): T[] {
-  const a = tracks.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
 
 function ArtistPageView() {
   const { id } = Route.useParams();
@@ -55,21 +45,25 @@ function ArtistPageView() {
 
   // "Shuffle" plays the artist's whole catalogue, not just the handful of
   // top songs shown on the page. YouTube Music exposes that as a shuffle
-  // radio playlist (`RDAO…`) on the header's play button; expanding it via
-  // /next returns the full, pre-shuffled queue. Only offered when the
-  // artist actually has one.
+  // radio playlist (`RDAO…`) on the header's play button; `fetchArtistShuffle`
+  // expands it into a fresh, already-shuffled, artist-first queue. Only
+  // offered when the artist actually has one.
   const shuffleId = data.shuffleId;
   const onShuffle = shuffleId
     ? async () => {
         try {
-          const tracks = await fetchWatchQueue(shuffleId);
+          const { tracks, continuation } = await fetchArtistShuffle(shuffleId);
           if (tracks.length) {
-            // YouTube returns the RDAO shuffle queue in a *deterministic*
-            // order for a stable visitorData (which the app always sends),
-            // so re-shuffling the same artist would otherwise replay the
-            // identical queue. Randomize client-side so each Shuffle is
-            // genuinely different.
-            usePlaybackStore.getState().playShelfItems(shuffleTracks(tracks), 0);
+            const store = usePlaybackStore.getState();
+            // The queue is already shuffled by YouTube and ordered
+            // artist-first → radio-tail-last. Clear the shuffle toggle so
+            // setQueue doesn't re-shuffle it (which would drag that radio
+            // tail up to the top), then play it in order from the start.
+            store.setShuffle(false);
+            store.playShelfItems(tracks, 0);
+            // Only the first page is loaded; hand the player the token so it
+            // pages the rest of the station in as the queue nears its end.
+            store.setStationContinuation(continuation);
           } else {
             toast.error("Couldn't shuffle — no tracks returned.");
           }
