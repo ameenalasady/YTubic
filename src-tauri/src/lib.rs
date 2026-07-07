@@ -1322,14 +1322,24 @@ struct DownloadState {
 
 type DownloadMap = Arc<Mutex<HashMap<String, Arc<DownloadState>>>>;
 
-// NB: `cookies.enc` is read only by the InnerTube pipeline (library,
-// search, liked songs). We deliberately do NOT forward cookies to
-// yt-dlp: YouTube's bot-detection treats any authenticated yt-dlp
-// request as a bot and strips every real audio format, leaving only
-// storyboard thumbnails — so anonymous streaming via the android_vr/
-// ios/mweb clients actually works better than authenticated streaming.
+// NB: streaming is anonymous BY DEFAULT. YouTube's bot-detection treats
+// an authenticated request through a non-browser player client (tv,
+// android_vr) as a bot — it can't produce a PO token, so it looks like
+// an account scraping — and strips every real audio format, leaving only
+// storyboard thumbnails. Anonymous streaming via tv/android_vr avoids
+// that entirely and is the primary path.
+//
+// The one exception is age-restricted videos: those can't be played
+// anonymously at all (no client-only bypass survives in current yt-dlp).
+// For those we retry once WITH the signed-in account's cookies via a web
+// client (`web_safari`/`mweb`) — the context where authenticated
+// requests are expected — so cookies are used surgically, only when the
+// anonymous attempt fails with the age-gate error. See `spawn_downloader`.
 #[derive(Clone)]
 struct StreamServer {
+    /// App handle, used solely to decrypt the active account's cookie jar
+    /// for the age-gated retry path (`write_temp_cookies`).
+    app: tauri::AppHandle,
     /// Persistent cache. Tracks land here for Premium-authenticated
     /// users and stay across app restarts.
     cache_dir: PathBuf,
@@ -1562,6 +1572,192 @@ async fn get_stream_base_url(
     }
 }
 
+/// Outcome of a single yt-dlp invocation in `download_attempt`.
+struct AttemptOutcome {
+    /// The child exited 0 and we streamed its full stdout without error.
+    ok: bool,
+    /// stderr carried YouTube's age-confirmation signature — the caller
+    /// may retry with cookies.
+    age_gated: bool,
+}
+
+/// A private, self-deleting Netscape cookie jar for yt-dlp's `--cookies`.
+/// The file is removed when this guard drops.
+struct TempCookies {
+    path: PathBuf,
+}
+
+impl TempCookies {
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for TempCookies {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Decrypt the active account's cookie jar (already Netscape format) into
+/// a `0600` temp file that yt-dlp can read via `--cookies`. Returns
+/// `None` when nobody is signed in or decryption fails — i.e. there's no
+/// authentication to attempt.
+async fn write_temp_cookies(app: &tauri::AppHandle) -> Option<TempCookies> {
+    let netscape = read_cookies_plain(app).await?;
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let _ = tokio::fs::create_dir_all(&dir).await;
+    let path = dir.join(format!("ytdlp-cookies-{}.txt", generate_stream_token()));
+
+    // Create with restrictive perms up front (no world-readable window)
+    // and write synchronously — the jar is tiny and holds real auth
+    // tokens, so we don't leave it lying around readable.
+    let write_path = path.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        use std::io::Write;
+        #[cfg(unix)]
+        let mut f = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&write_path)?
+        };
+        #[cfg(not(unix))]
+        let mut f = std::fs::File::create(&write_path)?;
+        f.write_all(netscape.as_bytes())?;
+        f.flush()
+    })
+    .await
+    .ok()?
+    .ok()?;
+
+    Some(TempCookies { path })
+}
+
+/// Run yt-dlp once for `url`, streaming stdout into `part_path` (created
+/// fresh) and pinging `state.notify` on each chunk. `format` is the `-f`
+/// selector and `player_client` the `youtube:player_client=` value;
+/// `cookies`, when set, is passed via `--cookies`. Returns whether it
+/// succeeded and whether stderr showed the age-gate error so the caller
+/// can decide to retry.
+async fn download_attempt(
+    program: &std::path::Path,
+    url: &str,
+    part_path: &std::path::Path,
+    format: &str,
+    player_client: &str,
+    cookies: Option<&std::path::Path>,
+    state: &Arc<DownloadState>,
+) -> AttemptOutcome {
+    let mut cmd = TokioCommand::new(program);
+    cmd.arg("-f");
+    cmd.arg(format);
+    cmd.args([
+        "--no-playlist",
+        "--no-warnings",
+        "--no-part",
+        "-q",
+        "--extractor-args",
+    ]);
+    cmd.arg(format!("youtube:player_client={player_client}"));
+    if let Some(c) = cookies {
+        cmd.arg("--cookies").arg(c);
+    }
+    cmd.args(["-o", "-"]);
+    cmd.arg(url);
+    // Windows: suppress the console window for the child yt-dlp.exe.
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+
+    // stderr is piped (not inherited) so we can scan it for the age-gate
+    // signature; we still echo it afterwards to preserve the old logging.
+    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[stream] spawn yt-dlp: {e}");
+            return AttemptOutcome {
+                ok: false,
+                age_gated: false,
+            };
+        }
+    };
+
+    let mut stdout = child.stdout.take().unwrap();
+    // Drain stderr concurrently — a full pipe buffer would otherwise
+    // deadlock a chatty yt-dlp against our stdout read loop.
+    let stderr = child.stderr.take();
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut e) = stderr {
+            let _ = e.read_to_end(&mut buf).await;
+        }
+        buf
+    });
+
+    let mut file = tokio::fs::File::create(part_path).await.ok();
+    let mut read_buf = vec![0u8; 64 * 1024];
+    let mut ok = true;
+    // Per-read timeout so a wedged yt-dlp (stalled TCP / hung extractor)
+    // can't keep this task and the child process alive forever.
+    const READ_TIMEOUT: Duration = Duration::from_secs(60);
+    loop {
+        match tokio::time::timeout(READ_TIMEOUT, stdout.read(&mut read_buf)).await {
+            Err(_) => {
+                eprintln!("[stream] read timeout; killing yt-dlp");
+                let _ = child.start_kill();
+                ok = false;
+                break;
+            }
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => {
+                let chunk = &read_buf[..n];
+                if let Some(ref mut f) = file {
+                    if let Err(e) = f.write_all(chunk).await {
+                        eprintln!("[stream] write .part: {e}");
+                        file = None;
+                        // A truncated prefix must NOT be renamed to .webm
+                        // and cached — mark the whole download failed.
+                        ok = false;
+                    }
+                }
+                state.notify.notify_waiters();
+            }
+            Ok(Err(e)) => {
+                eprintln!("[stream] read stdout: {e}");
+                ok = false;
+                break;
+            }
+        }
+    }
+    if let Some(mut f) = file.take() {
+        let _ = f.flush().await;
+        drop(f);
+    }
+    let status = child.wait().await;
+    let success = ok && status.map(|s| s.success()).unwrap_or(false);
+
+    let stderr_bytes = stderr_task.await.unwrap_or_default();
+    let stderr_str = String::from_utf8_lossy(&stderr_bytes);
+    if !stderr_str.trim().is_empty() {
+        eprint!("{stderr_str}");
+    }
+    // yt-dlp's age-gate line: "Sign in to confirm your age. This video may
+    // be inappropriate for some users." Match on stable substrings.
+    let age_gated = stderr_str.contains("confirm your age")
+        || stderr_str.contains("Sign in to confirm you");
+
+    AttemptOutcome {
+        ok: success,
+        age_gated,
+    }
+}
+
 /// Spawn a yt-dlp downloader that writes into the shared memory buffer
 /// AND to a `<videoId>.part` file on disk. On successful exit, renames
 /// .part → .webm. Updates `state.complete` + pings `notify` on every
@@ -1585,83 +1781,57 @@ fn spawn_downloader(
         let _ = tokio::fs::create_dir_all(&target_dir).await;
         let _ = tokio::fs::remove_file(&part_path).await; // clean stale
 
-        let mut cmd = TokioCommand::new(ytdlp::program(&srv.ytdlp_bin));
-        cmd.args([
-            "-f",
-            "bestaudio[ext=webm]/bestaudio",
-            "--no-playlist",
-            "--no-warnings",
-            "--no-part",
-            "-q",
-            "--extractor-args",
-            "youtube:player_client=tv,android_vr",
-            "-o",
-            "-",
-        ]);
-        cmd.arg(&url);
-        // Windows: suppress the console window for the child yt-dlp.exe
-        // (see resolve_stream_ytdlp for rationale).
-        #[cfg(windows)]
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        let mut child = match cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[stream] spawn {video_id}: {e}");
-                state.complete.store(true, Ordering::Release);
-                state.notify.notify_waiters();
-                downloads.lock().await.remove(&map_key);
-                return;
-            }
-        };
+        let program = ytdlp::program(&srv.ytdlp_bin);
 
-        let mut stdout = child.stdout.take().unwrap();
-        let mut file = tokio::fs::File::create(&part_path).await.ok();
-        let mut buf = vec![0u8; 64 * 1024];
-        let mut ok = true;
-        // Per-read timeout so a wedged yt-dlp (stalled TCP / hung extractor)
-        // can't keep this task and the child process alive forever with
-        // `complete` stuck false — otherwise every later request for the id
-        // attaches to the dead entry and blocks 120s then 504.
-        const READ_TIMEOUT: Duration = Duration::from_secs(60);
-        loop {
-            match tokio::time::timeout(READ_TIMEOUT, stdout.read(&mut buf)).await {
-                Err(_) => {
-                    eprintln!("[stream] read timeout for {video_id}; killing yt-dlp");
-                    let _ = child.start_kill();
-                    ok = false;
-                    break;
+        // Primary attempt: anonymous, via the tv/android_vr clients — best
+        // formats and lowest bot-detection scrutiny (see StreamServer note).
+        const AUDIO_FORMAT: &str = "bestaudio[ext=webm]/bestaudio";
+        let mut attempt = download_attempt(
+            &program,
+            &url,
+            &part_path,
+            AUDIO_FORMAT,
+            "tv,android_vr",
+            None,
+            &state,
+        )
+        .await;
+
+        // Age-restricted videos can't be streamed anonymously. If the
+        // anonymous attempt failed specifically with the age-gate error and
+        // an account is signed in, retry once with that account's cookies.
+        // Reuse the tv/android_vr clients (which already return real webm
+        // audio on the anonymous path — the web clients only expose
+        // SABR/storyboard formats here) and just let the cookies supply the
+        // account's age confirmation. A trailing `/best` guards against a
+        // client that omits an audio-only format on the authenticated path.
+        if !attempt.ok && attempt.age_gated {
+            match write_temp_cookies(&srv.app).await {
+                Some(cookies) => {
+                    eprintln!(
+                        "[stream] {video_id} is age-restricted; retrying with account cookies"
+                    );
+                    attempt = download_attempt(
+                        &program,
+                        &url,
+                        &part_path,
+                        "bestaudio[ext=webm]/bestaudio/best",
+                        "tv,android_vr",
+                        Some(cookies.path()),
+                        &state,
+                    )
+                    .await;
+                    // `cookies` (temp jar) is removed here on drop.
                 }
-                Ok(Ok(0)) => break,
-                Ok(Ok(n)) => {
-                    let chunk = &buf[..n];
-                    if let Some(ref mut f) = file {
-                        if let Err(e) = f.write_all(chunk).await {
-                            eprintln!("[stream] write .part: {e}");
-                            file = None;
-                            // A truncated prefix must NOT be renamed to .webm
-                            // and cached — mark the whole download failed.
-                            ok = false;
-                        }
-                    }
-                    state.notify.notify_waiters();
-                }
-                Ok(Err(e)) => {
-                    eprintln!("[stream] read stdout: {e}");
-                    ok = false;
-                    break;
+                None => {
+                    eprintln!(
+                        "[stream] {video_id} is age-restricted but no account is signed in — cannot play"
+                    );
                 }
             }
         }
-        if let Some(mut f) = file.take() {
-            let _ = f.flush().await;
-            drop(f);
-        }
-        let status = child.wait().await;
-        let success = ok && status.map(|s| s.success()).unwrap_or(false);
+
+        let success = attempt.ok;
 
         // Finish all file operations BEFORE signalling completion.
         // Otherwise handlers waiting on `state.complete` can race and
@@ -1991,6 +2161,7 @@ fn generate_stream_token() -> String {
 }
 
 async fn start_stream_server(
+    app: tauri::AppHandle,
     port_state: Arc<Mutex<Option<u16>>>,
     token_state: Arc<Mutex<Option<String>>>,
     cache_dir: PathBuf,
@@ -2034,6 +2205,7 @@ async fn start_stream_server(
     enforce_cache_limit(cache_dir.clone(), cache_limit.load(Ordering::Relaxed)).await;
 
     let server = StreamServer {
+        app,
         cache_dir,
         ephemeral_dir,
         cover_dir,
@@ -2260,6 +2432,7 @@ pub fn run() {
                 // the server starts enforcing it.
                 cache_limit.store(read_cache_limit(&handle).await, Ordering::Relaxed);
                 start_stream_server(
+                    handle,
                     port,
                     token,
                     cache_dir,
