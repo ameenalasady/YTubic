@@ -65,6 +65,7 @@ import {
   removeRating,
   type UserPlaylist,
 } from "@/lib/innertube/mutations";
+import { syncLastfmLove } from "@/lib/lastfm/love";
 import { usePlaybackStore } from "@/lib/store/playback";
 import type { ShelfItem } from "@/lib/innertube/types";
 
@@ -138,6 +139,7 @@ export function useTrackMenuController(item: ShelfItem) {
           ...list,
         ];
       });
+      syncLastfmLove(item, true);
       toast.success("Added to Liked songs");
     } catch (e) {
       toast.error(`Like failed: ${String(e)}`);
@@ -149,6 +151,7 @@ export function useTrackMenuController(item: ShelfItem) {
       qc.setQueryData<ShelfItem[]>(["liked-songs"], (old) =>
         (old ?? []).filter((t) => t.id !== item.id),
       );
+      syncLastfmLove(item, false);
       toast.success("Removed from Liked songs");
     } catch (e) {
       toast.error(`Remove failed: ${String(e)}`);
@@ -160,6 +163,8 @@ export function useTrackMenuController(item: ShelfItem) {
       qc.setQueryData<ShelfItem[]>(["liked-songs"], (old) =>
         (old ?? []).filter((t) => t.id !== item.id),
       );
+      // A dislike removes it from Liked, so drop the Last.fm love too.
+      syncLastfmLove(item, false);
       toast.success("Marked as not interested");
     } catch (e) {
       toast.error(`Failed: ${String(e)}`);

@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import { likeTrack, removeRating } from "@/lib/innertube/mutations";
+import { syncLastfmLove } from "@/lib/lastfm/love";
+import type { LastfmTrackMeta } from "@/lib/lastfm/track";
+import { useTrackMetaStore } from "@/lib/store/track-meta";
 import type { ShelfItem } from "@/lib/innertube/types";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +48,9 @@ type Props = {
    *  row. Caller controls hover visibility via CSS; we just render
    *  the buttons and let `group-hover:*` classes do the work. */
   hideUnlessLiked?: boolean;
+  /** Title/artist metadata so a like can be mirrored to Last.fm's loved
+   *  tracks. Optional — falls back to the play-time track-meta store. */
+  meta?: LastfmTrackMeta;
 };
 
 export function LikeDislikeButtons({
@@ -52,6 +58,7 @@ export function LikeDislikeButtons({
   className,
   compact,
   hideUnlessLiked,
+  meta,
 }: Props) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState<"like" | null>(null);
@@ -94,6 +101,13 @@ export function LikeDislikeButtons({
         });
         toast.success("Added to Liked");
       }
+      // Mirror to Last.fm loved tracks. Prefer caller-supplied metadata;
+      // fall back to what we remembered at play time (both may be absent
+      // for a never-played track, in which case love-sync quietly skips).
+      syncLastfmLove(
+        meta ?? useTrackMetaStore.getState().byId[videoId] ?? {},
+        !wasLiked,
+      );
       // The heart-fill cache (["liked-songs"]) is separate from the
       // Library → Songs list (["library","liked-songs-pages"]) and the
       // Liked Songs (LM) playlist page (["playlist-pages", …"LM"…]). Mark

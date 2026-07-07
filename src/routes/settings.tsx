@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CheckCircle2Icon,
   UserRoundIcon,
@@ -14,6 +15,8 @@ import {
   HeartIcon,
   ImageIcon,
   SearchIcon,
+  Music2Icon,
+  ExternalLinkIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +33,8 @@ import { resetInnertube } from "@/lib/innertube/client";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import { clearPrefetchMemo } from "@/lib/stream";
 import { removeAccount } from "@/lib/store/accounts";
+import { useLastfmStore, isLastfmLinked } from "@/lib/store/lastfm";
+import { authorizeUrl, getSession, getToken } from "@/lib/lastfm/api";
 import { useTrackMetaStore, type TrackMeta } from "@/lib/store/track-meta";
 import { backfillTrackMeta } from "@/lib/track-meta-fetch";
 import type { ShelfItem } from "@/lib/innertube/types";
@@ -149,10 +154,229 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
+      <LastfmCard />
+
       <CacheCard loggedIn={!!loggedIn.data} />
 
       <CoverCacheCard />
     </div>
+  );
+}
+
+const LASTFM_API_ACCOUNT_URL = "https://www.last.fm/api/account/create";
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function LastfmCard() {
+  const {
+    apiKey,
+    apiSecret,
+    sessionKey,
+    username,
+    scrobblingEnabled,
+    loveSyncEnabled,
+    setCredentials,
+    setSession,
+    setScrobblingEnabled,
+    setLoveSyncEnabled,
+    disconnect,
+  } = useLastfmStore();
+  const linked = isLastfmLinked({ apiKey, apiSecret, sessionKey });
+
+  const [keyInput, setKeyInput] = useState(apiKey);
+  const [secretInput, setSecretInput] = useState(apiSecret);
+  const [connecting, setConnecting] = useState(false);
+  // Lets the user abort the browser-authorization polling loop.
+  const cancelledRef = useRef(false);
+
+  const connect = async () => {
+    const key = keyInput.trim();
+    const secret = secretInput.trim();
+    if (!key || !secret) {
+      toast.error("Enter your Last.fm API key and shared secret first.");
+      return;
+    }
+    setCredentials(key, secret);
+    const creds = { apiKey: key, apiSecret: secret };
+    setConnecting(true);
+    cancelledRef.current = false;
+    try {
+      const token = await getToken(creds);
+      await openUrl(authorizeUrl(key, token));
+      toast.info(
+        "Authorize YTubic in the browser tab that opened — linking will finish automatically.",
+      );
+      // Poll for the authorized session. Last.fm returns error 14 ("token
+      // not authorized") until the user grants access, and 15 once the
+      // token expires (~1 hour, but we give up long before that).
+      const startedAt = Date.now();
+      while (!cancelledRef.current && Date.now() - startedAt < 150_000) {
+        await sleep(3000);
+        if (cancelledRef.current) break;
+        try {
+          const session = await getSession(creds, token);
+          setSession(session.key, session.name);
+          toast.success(`Connected to Last.fm as ${session.name}`);
+          return;
+        } catch (e) {
+          const code = (e as { code?: number }).code;
+          if (code === 14) continue; // not authorized yet — keep waiting
+          throw e; // any other error (expired token, network) is terminal
+        }
+      }
+      if (!cancelledRef.current) {
+        toast.error("Timed out waiting for Last.fm authorization.");
+      }
+    } catch (e) {
+      toast.error(
+        `Last.fm: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const cancel = () => {
+    cancelledRef.current = true;
+    setConnecting(false);
+  };
+
+  const unlink = () => {
+    disconnect();
+    toast.success("Disconnected from Last.fm");
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle className="flex items-center gap-2">
+              <Music2Icon className="size-5" />
+              Last.fm
+            </CardTitle>
+            <CardDescription>
+              Scrobble what you play and share your now-playing status. Uses
+              your own Last.fm API account — nothing is sent anywhere until
+              you connect.
+            </CardDescription>
+          </div>
+          {linked ? (
+            <Badge
+              variant="secondary"
+              className="gap-1 bg-rose-500/15 text-rose-600 dark:text-rose-400"
+            >
+              <CheckCircle2Icon className="size-3.5" />
+              {username ? `@${username}` : "Connected"}
+            </Badge>
+          ) : (
+            <Badge variant="outline">Not connected</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {linked ? (
+          <>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 p-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">Scrobble tracks</span>
+                <span className="text-xs text-muted-foreground">
+                  Send plays and now-playing updates to Last.fm.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={scrobblingEnabled}
+                onChange={(e) => setScrobblingEnabled(e.target.checked)}
+                className="size-4 accent-rose-500"
+                aria-label="Enable scrobbling"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 p-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">Love liked tracks</span>
+                <span className="text-xs text-muted-foreground">
+                  When you like a song in YTubic, also love it on Last.fm.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={loveSyncEnabled}
+                onChange={(e) => setLoveSyncEnabled(e.target.checked)}
+                className="size-4 accent-rose-500"
+                aria-label="Sync loved tracks"
+              />
+            </label>
+            <Button variant="outline" onClick={unlink} className="self-start">
+              <LogOutIcon />
+              Disconnect
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="lastfm-key"
+                  className="text-sm font-medium"
+                >
+                  API key
+                </label>
+                <Input
+                  id="lastfm-key"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="Your Last.fm API key"
+                  disabled={connecting}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="lastfm-secret"
+                  className="text-sm font-medium"
+                >
+                  Shared secret
+                </label>
+                <Input
+                  id="lastfm-secret"
+                  type="password"
+                  value={secretInput}
+                  onChange={(e) => setSecretInput(e.target.value)}
+                  placeholder="Your Last.fm shared secret"
+                  disabled={connecting}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => openUrl(LASTFM_API_ACCOUNT_URL)}
+                className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Create a Last.fm API account
+                <ExternalLinkIcon className="size-3" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={connect} disabled={connecting}>
+                {connecting ? (
+                  <Loader2Icon className="animate-spin" />
+                ) : (
+                  <LogInIcon />
+                )}
+                {connecting ? "Waiting for authorization…" : "Connect"}
+              </Button>
+              {connecting && (
+                <Button variant="ghost" onClick={cancel}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -21,7 +21,8 @@
         { "url": "https://lh3.googleusercontent.com/*" },
         { "url": "https://itunes.apple.com/*" },
         { "url": "https://apic-desktop.musixmatch.com/*" },
-        { "url": "https://genius.com/*" }
+        { "url": "https://genius.com/*" },
+        { "url": "https://ws.audioscrobbler.com/*" }
       ]
     },
     "store:default",
