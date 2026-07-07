@@ -383,6 +383,150 @@ fn cookies_to_netscape(cookies: &[cookie::Cookie<'static>]) -> String {
     out
 }
 
+/// Stable "same account" key derived from an account's backfilled meta.
+/// Prefers the email; when that's empty (brand-channel identities, and
+/// some accounts, omit it from `/account_menu`) it falls back to the
+/// avatar URL, whose `yt3.ggpht.com/-<token>` base is stable per
+/// account. Returns `None` when neither is known, so two accounts we
+/// can't tell apart are never merged.
+///
+/// Cookie values can't serve as the key: every login runs in an
+/// isolated WebView profile, so Google mints a fresh SAPISID/SID
+/// session each time and the same account lands a different value on
+/// each add.
+fn meta_identity(email: &str, photo_url: Option<&str>) -> Option<String> {
+    let email = email.trim();
+    if !email.is_empty() {
+        return Some(format!("email:{}", email.to_ascii_lowercase()));
+    }
+    if let Some(p) = photo_url {
+        // Drop the "=s108-c-k-..." sizing suffix so the same avatar at
+        // different requested sizes still compares equal.
+        let base = p.split('=').next().unwrap_or(p).trim();
+        if !base.is_empty() {
+            return Some(format!("photo:{base}"));
+        }
+    }
+    None
+}
+
+/// Collapse duplicate account rows that are the same Google account.
+/// Re-adding an account you already have (or a stale/expired re-login)
+/// used to append a fresh row that never merged, because dedup keyed on
+/// an email that `/account_menu` often leaves empty. This heals that
+/// state from the stored meta: within each set of rows sharing an
+/// identity (see `meta_identity`) it keeps the earliest-added one
+/// (stable id, so pinned-playlist buckets survive), copies the freshest
+/// cookies into it, and drops the rest off disk. A row we can't identify
+/// (no email, no avatar) is left untouched rather than risk merging two
+/// real accounts.
+///
+/// Does not emit `accounts-changed`: callers either run it before the
+/// UI reads the list (startup) or emit the event themselves.
+async fn dedup_accounts_by_identity(app: &tauri::AppHandle) {
+    let mut idx = read_index(app).await;
+    if idx.accounts.len() < 2 {
+        return;
+    }
+
+    // Identity per row from its stored meta, same order as idx.accounts.
+    let identities: Vec<Option<String>> = idx
+        .accounts
+        .iter()
+        .map(|a| meta_identity(&a.email, a.photo_url.as_deref()))
+        .collect();
+
+    // Group row indices by identity.
+    let mut groups: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, ident) in identities.iter().enumerate() {
+        if let Some(key) = ident {
+            groups.entry(key.clone()).or_default().push(i);
+        }
+    }
+
+    // removed id -> keeper id, so `active` can follow its keeper.
+    let mut remap: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    // (source id, keeper id) jars to copy before deleting the source.
+    let mut fresh_copies: Vec<(String, String)> = Vec::new();
+
+    for members in groups.values() {
+        if members.len() < 2 {
+            continue;
+        }
+        // Keep the earliest-added row: its id is the one pins are keyed
+        // to, and it's the account the user has had the longest.
+        let keeper = *members
+            .iter()
+            .min_by_key(|&&i| idx.accounts[i].added_at)
+            .unwrap();
+        let keeper_id = idx.accounts[keeper].id.clone();
+
+        // Freshest cookies: the jar written most recently. After a
+        // re-login that's the keeper itself (login-time dedup refreshed
+        // it in place, so no copy happens); when healing a pile of
+        // legacy dups it's whichever login was most recent, the one
+        // most likely to still authenticate. Falls back to the keeper
+        // if no jar's mtime can be read.
+        let mut freshest = keeper;
+        let mut best_mtime: Option<std::time::SystemTime> = None;
+        for &i in members {
+            let p = account_cookies_path(app, &idx.accounts[i].id);
+            let mtime = tokio::fs::metadata(&p)
+                .await
+                .ok()
+                .and_then(|m| m.modified().ok());
+            if let Some(t) = mtime {
+                if best_mtime.map_or(true, |b| t > b) {
+                    best_mtime = Some(t);
+                    freshest = i;
+                }
+            }
+        }
+        let fresh_id = idx.accounts[freshest].id.clone();
+        if fresh_id != keeper_id {
+            fresh_copies.push((fresh_id, keeper_id.clone()));
+        }
+
+        for &i in members {
+            if i != keeper {
+                remap.insert(idx.accounts[i].id.clone(), keeper_id.clone());
+            }
+        }
+    }
+
+    if remap.is_empty() {
+        return;
+    }
+
+    for (from_id, keeper_id) in &fresh_copies {
+        let from_path = account_cookies_path(app, from_id);
+        let keep_path = account_cookies_path(app, keeper_id);
+        if let Ok(bytes) = tokio::fs::read(&from_path).await {
+            let _ = tokio::fs::write(&keep_path, bytes).await;
+        }
+    }
+
+    if let Some(active) = idx.active.clone() {
+        if let Some(keeper) = remap.get(&active) {
+            idx.active = Some(keeper.clone());
+        }
+    }
+
+    for rid in remap.keys() {
+        let _ = tokio::fs::remove_dir_all(accounts_dir(app).join(rid)).await;
+    }
+    idx.accounts.retain(|a| !remap.contains_key(&a.id));
+
+    let removed = remap.len();
+    if let Err(e) = write_index(app, &idx).await {
+        eprintln!("[accounts] dedup write index: {e}");
+        return;
+    }
+    eprintln!("[accounts] collapsed {removed} duplicate account row(s) by identity");
+}
+
 /// Open an in-app Google sign-in window in an isolated WebView profile
 /// and add the resulting cookies as a new account. Polls the (fresh)
 /// webview cookie store until YouTube auth cookies appear, encrypts
@@ -401,8 +545,9 @@ fn cookies_to_netscape(cookies: &[cookie::Cookie<'static>]) -> String {
 /// We deliberately do NOT emit `accounts-changed` here. The newly-
 /// added account has empty meta and may not even survive the next
 /// step: the frontend's meta backfill calls `update_account_meta`,
-/// which is when we find out via the email lookup whether this is
-/// genuinely a new account or a re-sign-in of an existing one. That
+/// which is when we find out via an identity lookup (email, or avatar
+/// when the email is empty) whether this is genuinely a new account or
+/// a re-sign-in of an existing one. That
 /// command emits `accounts-changed` for both cases, and the global
 /// listener does its full reset there. Firing the event twice was the
 /// "double-reset on dedup" UX bug.
@@ -584,12 +729,12 @@ async fn start_login(app: tauri::AppHandle) -> Result<(), String> {
                 return;
             }
 
-            // `login-success` is the soft signal: frontend invalidates
-            // its auth queries so the meta backfill can fire with the
-            // new cookies. The follow-up `update_account_meta` call
-            // is where `accounts-changed` actually fires — that's the
-            // single source of truth for "an account flipped" so we
-            // never run the full reset twice for one login flow.
+            // `login-success` is the soft signal: the frontend invalidates
+            // its auth queries so the meta backfill runs with the new
+            // cookies. The follow-up `update_account_meta` call is where
+            // dedup happens (by identity, email or avatar) and where
+            // `accounts-changed` fires, so we never run the full reset
+            // twice for one login flow.
             let _ = app_poll.emit("login-success", &new_id);
             let _ = win.close();
             let _ = tokio::fs::remove_dir_all(&cleanup_dir).await;
@@ -914,11 +1059,11 @@ async fn remove_account(app: tauri::AppHandle, id: String) -> Result<(), String>
 /// per session after `/account_menu` returns the active user's name
 /// + email + avatar.
 ///
-/// Dedup: if the supplied email matches a *different* account that
-/// already exists, this is a re-login of an account we've seen
-/// before. Replace the older account's cookies with the freshly-
-/// captured ones, drop this account's just-created entry, and pin
-/// the older id as active.
+/// Dedup: if the supplied identity (email, or avatar when the email is
+/// empty) matches a *different* existing account, this is a re-login of
+/// an account we've seen before. Replace the older account's cookies
+/// with the freshly-captured ones, drop this account's just-created
+/// entry, and pin the older id as active.
 #[tauri::command]
 async fn update_account_meta(
     app: tauri::AppHandle,
@@ -929,13 +1074,18 @@ async fn update_account_meta(
 ) -> Result<(), String> {
     let photo_url = photoUrl;
     let mut idx = read_index(&app).await;
-    let dup_pos = if !email.is_empty() {
-        idx.accounts
-            .iter()
-            .position(|a| a.id != id && a.email == email)
-    } else {
-        None
-    };
+    // Re-login of an existing account? Match a *different* row by
+    // identity (email, or avatar when the email is empty — see
+    // `meta_identity`). Keying on email alone missed brand-channel and
+    // no-email accounts, which is how duplicate rows used to pile up.
+    let incoming = meta_identity(&email, photo_url.as_deref());
+    let dup_pos = incoming.as_ref().and_then(|key| {
+        idx.accounts.iter().position(|a| {
+            a.id != id
+                && meta_identity(&a.email, a.photo_url.as_deref()).as_deref()
+                    == Some(key.as_str())
+        })
+    });
 
     // A "fresh add" is the very first meta backfill after
     // `start_login` — the account row exists but its name + email
@@ -975,7 +1125,11 @@ async fn update_account_meta(
         }
         if let Some(other) = idx.accounts.iter_mut().find(|a| a.id == other_id) {
             other.name = name;
-            other.email = email;
+            // Don't let an empty backfill (brand channel / no email in
+            // /account_menu) wipe a good stored email.
+            if !email.is_empty() {
+                other.email = email;
+            }
             other.photo_url = photo_url;
         }
         if idx.active.as_deref() != Some(other_id.as_str()) {
@@ -2276,6 +2430,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 migrate_plaintext_cookies(&handle).await;
                 migrate_to_accounts_layout(&handle).await;
+                // Heal any duplicate account rows left by the old
+                // email-based dedup before the UI reads the list.
+                dedup_accounts_by_identity(&handle).await;
                 start_stream_server(port, token, cache_dir, ephemeral_dir, cover_dir, ytdlp_bin)
                     .await;
             });
