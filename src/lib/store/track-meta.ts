@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { safeLocalStorage } from "./safe-storage";
 
 export type TrackMeta = {
   title: string;
@@ -56,7 +57,7 @@ export const useTrackMetaStore = create<State>()(
     }),
     {
       name: "ytm-track-meta",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => safeLocalStorage),
     },
   ),
 );

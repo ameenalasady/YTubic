@@ -145,7 +145,11 @@ function createDebouncedStorage(delay = 1000): StateStorage | undefined {
       const timer = window.setTimeout(() => {
         const item = pending.get(name);
         if (!item) return;
-        window.localStorage.setItem(name, item.value);
+        try {
+          window.localStorage.setItem(name, item.value);
+        } catch (e) {
+          console.warn(`[playback] failed to persist "${name}":`, e);
+        }
         pending.delete(name);
       }, delay);
       pending.set(name, { value, timer });

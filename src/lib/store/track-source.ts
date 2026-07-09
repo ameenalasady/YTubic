@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { emit } from "@tauri-apps/api/event";
 import { isFloatingPlayerWindow } from "@/lib/floating-player";
+import { safeLocalStorage } from "./safe-storage";
 
 export type SourceKind = "song" | "video";
 
@@ -87,7 +88,7 @@ export const useTrackSourceStore = create<State>()(
           return { byVideoId: next };
         }),
     }),
-    { name: "ytm-track-source" },
+    { name: "ytm-track-source", storage: createJSONStorage(() => safeLocalStorage) },
   ),
 );
 
