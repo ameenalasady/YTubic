@@ -51,6 +51,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePinned, usePinnedPlaylistsStore } from "@/lib/store/pinned-playlists";
+import { fetchLibraryPlaylists } from "@/lib/innertube/library";
+import { pickThumbnail } from "@/components/shared/thumbnail";
 import { openChannelPicker } from "@/lib/store/channel-picker";
 import { openSettings } from "@/lib/store/settings-dialog";
 import { UpdateBanner } from "@/components/layout/update-banner";
@@ -84,9 +86,39 @@ export function AppSidebar() {
   const pinned = usePinned();
   const unpin = usePinnedPlaylistsStore((s) => s.unpin);
 
+  const loggedIn = useQuery({
+    queryKey: ["auth-logged-in"],
+    queryFn: () => invoke<boolean>("is_logged_in"),
+    staleTime: 30_000,
+  });
+
+  // The user's saved/created playlists from their YT Music library.
+  // Shares the `["library", "playlists"]` query key (and cache) with the
+  // Library page so opening either warms the other. Signed-in only —
+  // without cookies the browse redirects to a generic page.
+  const libraryPlaylists = useQuery({
+    queryKey: ["library", "playlists"],
+    queryFn: fetchLibraryPlaylists,
+    enabled: loggedIn.data === true,
+    staleTime: 5 * 60_000,
+  });
+
   const isOn = (to: string) => location.pathname === to;
   const isPlaylistOn = (id: string) =>
     location.pathname === `/playlist/${id}`;
+
+  // Flatten the library shelves and drop entries already shown above:
+  // Liked Songs (its own hardcoded row, id `VLLM`/`LM`) and anything the
+  // user has explicitly pinned (rendered with an unpin menu).
+  const pinnedIds = new Set(pinned.map((p) => p.id));
+  const libraryItems = (libraryPlaylists.data ?? [])
+    .flatMap((s) => s.items)
+    .filter(
+      (it) =>
+        it.id !== LIKED_ID &&
+        it.id.replace(/^VL/, "") !== "LM" &&
+        !pinnedIds.has(it.id),
+    );
 
   return (
     <Sidebar
@@ -175,6 +207,34 @@ export function AppSidebar() {
                   </ContextMenu>
                 </SidebarMenuItem>
               ))}
+
+              {libraryItems.map((it) => {
+                const thumbnailUrl = pickThumbnail(it.thumbnails, 32);
+                return (
+                  <SidebarMenuItem key={it.id}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isPlaylistOn(it.id)}
+                      tooltip={it.title}
+                      className={MENU_BTN_CLS}
+                    >
+                      <Link to="/playlist/$id" params={{ id: it.id }}>
+                        {thumbnailUrl ? (
+                          <img
+                            src={thumbnailUrl}
+                            alt=""
+                            className="size-4 shrink-0 rounded-sm object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <ListMusicIcon />
+                        )}
+                        <span>{it.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
