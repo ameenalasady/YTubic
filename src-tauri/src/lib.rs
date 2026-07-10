@@ -25,6 +25,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::ServeFile;
 
 mod appid;
+mod discord;
 mod media;
 mod ytdlp;
 
@@ -3109,6 +3110,7 @@ pub fn run() {
         .manage(state)
         .manage(CloseBehavior::default())
         .manage(JarWriteLock::default())
+        .manage(discord::DiscordState::default())
         .invoke_handler(tauri::generate_handler![
             ensure_ytdlp,
             resolve_stream_ytdlp,
@@ -3145,6 +3147,9 @@ pub fn run() {
             close_player_window,
             media::media_update,
             media::media_clear,
+            discord::discord_set_config,
+            discord::discord_update,
+            discord::discord_clear,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

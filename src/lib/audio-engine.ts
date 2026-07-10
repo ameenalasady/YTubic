@@ -15,6 +15,7 @@ import {
   loadPlaybackPosition,
   savePlaybackPosition,
 } from "@/lib/store/playback-position";
+import { useDiscordStore, isDiscordConfigured } from "@/lib/store/discord";
 
 /**
  * AudioEngine binds the playback store to a singleton HTMLAudioElement
@@ -547,18 +548,21 @@ export function useAudioEngine() {
   }, [autoRadio, stationContinuation, qIndex, qLen, seedVideoId]);
 
   // Push metadata + playback state to the OS media controls (Windows SMTC /
-  // Linux MPRIS). The OS interpolates the scrubber between pushes while the
-  // state is Playing, so we don't push on every timeupdate — just on track /
+  // Linux MPRIS) and, if configured, to Discord Rich Presence. The OS (and
+  // Discord) interpolates the scrubber between pushes while the state is
+  // Playing, so we don't push on every timeupdate — just on track /
   // play-state / duration change, plus a light 2s refresh while playing to
   // correct drift and reflect seeks. Live values are read imperatively so
-  // this OS sync never re-triggers the resolve / playback effects above.
+  // this sync never re-triggers the resolve / playback effects above.
   const duration = usePlaybackStore((s) => s.duration);
+  const discordSettings = useDiscordStore();
   useEffect(() => {
     const push = () => {
       const s = usePlaybackStore.getState();
       const t = s.index >= 0 ? s.queue[s.index] : undefined;
       if (!t) {
         void invoke("media_clear").catch(() => {});
+        void invoke("discord_clear").catch(() => {});
         return;
       }
       void invoke("media_update", {
@@ -570,15 +574,75 @@ export function useAudioEngine() {
         elapsed: s.position,
         paused: !s.playing,
       }).catch(() => {});
+      pushDiscordPresence(t, s, discordSettings);
     };
     push();
     if (!playing) return;
     const id = window.setInterval(push, 2000);
     return () => window.clearInterval(id);
-  }, [track, playing, duration]);
+  }, [track, playing, duration, discordSettings]);
 }
 
 function buildArtistLabel(track: QueueTrack): string {
   if (track.artists?.length) return track.artists.map((a) => a.name).join(", ");
   return track.subtitle ?? "";
+}
+
+/** A real album song has album metadata and isn't the toggled-to-video
+ *  version of the pair; a standalone music video is neither. Used by the
+ *  Discord "only show for songs" filter. */
+function isAlbumSong(track: QueueTrack): boolean {
+  const hasAlbumMeta = !!(track.album || track.albumId);
+  const rec = useTrackSourceStore.getState().byVideoId[track.videoId];
+  const isVideoVersion = rec?.selected === "video";
+  return hasAlbumMeta && !isVideoVersion;
+}
+
+/**
+ * Build and push the Discord Rich Presence payload, applying every
+ * content/filter toggle from Settings → Integrations before it ever leaves
+ * the frontend — `discord_update` on the Rust side just assembles whatever
+ * non-empty fields it's handed (see src-tauri/src/discord.rs).
+ */
+function pushDiscordPresence(
+  track: QueueTrack,
+  playback: { position: number; duration: number; playing: boolean },
+  d: ReturnType<typeof useDiscordStore.getState>,
+): void {
+  if (!isDiscordConfigured(d)) return;
+  const paused = !playback.playing;
+  if (d.hideWhenPaused && paused) {
+    void invoke("discord_clear").catch(() => {});
+    return;
+  }
+  if (d.onlySongs && !isAlbumSong(track)) {
+    void invoke("discord_clear").catch(() => {});
+    return;
+  }
+  const titleText = d.showTitle ? track.title : "";
+  const artistText = d.showArtist ? buildArtistLabel(track) : "";
+  // Discord's "before you expand it" member-list line always mirrors
+  // whichever field `discord.rs` points `status_display_type` at (here,
+  // `details`) — there's no separate combined-text slot for it. Folding
+  // "Artist - Title" into `details` is what gets that summary line to read
+  // as more than just the app's name.
+  const details = [artistText, titleText].filter(Boolean).join(" - ");
+  void invoke("discord_update", {
+    payload: {
+      name: d.presenceName,
+      activityType: d.activityType,
+      details,
+      state: artistText,
+      largeImage: d.showAlbumArt ? pickThumbnail(track.thumbnails, 512) ?? "" : "",
+      largeText: d.showAlbumName ? track.album ?? "" : "",
+      buttonLabel: d.showButton ? "Listen on YouTube Music" : "",
+      buttonUrl: d.showButton
+        ? `https://music.youtube.com/watch?v=${track.videoId}`
+        : "",
+      timestamps: d.showTimestamps,
+      duration: Number.isFinite(playback.duration) ? playback.duration : 0,
+      elapsed: playback.position,
+      paused,
+    },
+  }).catch(() => {});
 }

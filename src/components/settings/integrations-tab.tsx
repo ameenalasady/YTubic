@@ -1,27 +1,40 @@
 import { useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  ActivityIcon,
+  DiscAlbumIcon,
   ExternalLinkIcon,
+  EyeOffIcon,
+  FilterIcon,
   HeartIcon,
+  ImageIcon,
   Loader2Icon,
   LogInIcon,
   LogOutIcon,
+  MessageCircleIcon,
+  Mic2Icon,
   Music2Icon,
+  MousePointerClickIcon,
   RadioIcon,
+  TimerIcon,
+  TypeIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
 import { useLastfmStore, isLastfmLinked } from "@/lib/store/lastfm";
 import { authorizeUrl, getSession, getToken } from "@/lib/lastfm/api";
+import { useDiscordStore, isDiscordConfigured } from "@/lib/store/discord";
 
 export function IntegrationsTab() {
   return (
     <TabPane tightTop>
       <LastfmGroup />
+      <DiscordGroup />
     </TabPane>
   );
 }
@@ -217,6 +230,242 @@ function LastfmGroup() {
             )}
           </div>
         </div>
+      )}
+    </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Discord Rich Presence                                               */
+/* ------------------------------------------------------------------ */
+
+const DISCORD_DEVELOPER_PORTAL_URL = "https://discord.com/developers/applications";
+
+function DiscordGroup() {
+  const {
+    enabled,
+    applicationId,
+    presenceName,
+    activityType,
+    showTitle,
+    showArtist,
+    showAlbumArt,
+    showAlbumName,
+    showTimestamps,
+    showButton,
+    onlySongs,
+    hideWhenPaused,
+    setEnabled,
+    setApplicationId,
+    setPresenceName,
+    setActivityType,
+    setShowTitle,
+    setShowArtist,
+    setShowAlbumArt,
+    setShowAlbumName,
+    setShowTimestamps,
+    setShowButton,
+    setOnlySongs,
+    setHideWhenPaused,
+  } = useDiscordStore();
+  const configured = isDiscordConfigured({ enabled, applicationId });
+
+  // Buffered like the Last.fm key/secret inputs above — commit on blur
+  // rather than on every keystroke, since each committed change triggers a
+  // reconnect attempt to Discord's IPC socket.
+  const [idInput, setIdInput] = useState(applicationId);
+  const commitId = () => setApplicationId(idInput);
+
+  return (
+    <Group>
+      <SettingRow
+        icon={MessageCircleIcon}
+        title="Discord Rich Presence"
+        description="Show what you're playing on your Discord profile. Talks directly to your local Discord app — nothing is sent anywhere else."
+        control={
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge
+              variant={enabled ? "secondary" : "outline"}
+              className={
+                enabled && configured
+                  ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400"
+                  : undefined
+              }
+            >
+              {!enabled ? "Disabled" : configured ? "Enabled" : "Needs Client ID"}
+            </Badge>
+            <Switch
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              aria-label="Enable Discord Rich Presence"
+            />
+          </div>
+        }
+      />
+      {enabled && (
+        <>
+          <div className="flex flex-col gap-3 py-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="discord-client-id" className="text-sm font-medium">
+                Application (Client) ID
+              </label>
+              <Input
+                id="discord-client-id"
+                value={idInput}
+                onChange={(e) => setIdInput(e.target.value)}
+                onBlur={commitId}
+                onKeyDown={(e) => e.key === "Enter" && commitId()}
+                placeholder="Your Discord application's Client ID"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-xs text-amber-600 dark:text-amber-500">
+                Pre-filled with YTubic&apos;s own Discord application. Don&apos;t
+                change this unless you know what you&apos;re doing — it only
+                needs to change if you&apos;re intentionally presenting as a
+                different Discord app (e.g. one you registered yourself).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => openUrl(DISCORD_DEVELOPER_PORTAL_URL)}
+              className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Create a Discord application
+              <ExternalLinkIcon className="size-3" />
+            </button>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="discord-presence-name" className="text-sm font-medium">
+                Presence name
+              </label>
+              <Input
+                id="discord-presence-name"
+                value={presenceName}
+                onChange={(e) => setPresenceName(e.target.value)}
+                placeholder="YouTube Music"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-xs text-muted-foreground">
+                The name in &quot;&lt;verb&gt; NAME&quot; — independent of
+                whatever the Discord application above is actually named.
+              </p>
+            </div>
+          </div>
+
+          <SettingRow
+            icon={ActivityIcon}
+            title="Activity type"
+            description='The verb in "<verb> <app name>".'
+            control={
+              <SegmentedControl
+                value={activityType}
+                onChange={setActivityType}
+                options={[
+                  { value: "listening", label: "Listening" },
+                  { value: "playing", label: "Playing" },
+                  { value: "watching", label: "Watching" },
+                ]}
+              />
+            }
+          />
+          <SettingRow
+            icon={TypeIcon}
+            title="Track title"
+            description='Shown as the "details" line.'
+            control={
+              <Switch
+                checked={showTitle}
+                onCheckedChange={setShowTitle}
+                aria-label="Show track title"
+              />
+            }
+          />
+          <SettingRow
+            icon={Mic2Icon}
+            title="Artist"
+            description='Shown as the "state" line.'
+            control={
+              <Switch
+                checked={showArtist}
+                onCheckedChange={setShowArtist}
+                aria-label="Show artist"
+              />
+            }
+          />
+          <SettingRow
+            icon={ImageIcon}
+            title="Album art"
+            description="Large cover image."
+            control={
+              <Switch
+                checked={showAlbumArt}
+                onCheckedChange={setShowAlbumArt}
+                aria-label="Show album art"
+              />
+            }
+          />
+          <SettingRow
+            icon={DiscAlbumIcon}
+            title="Album name"
+            description="Shown when hovering the cover."
+            control={
+              <Switch
+                checked={showAlbumName}
+                onCheckedChange={setShowAlbumName}
+                aria-label="Show album name"
+              />
+            }
+          />
+          <SettingRow
+            icon={TimerIcon}
+            title="Elapsed time"
+            description="Live progress bar (e.g. 01:36 / 02:51)."
+            control={
+              <Switch
+                checked={showTimestamps}
+                onCheckedChange={setShowTimestamps}
+                aria-label="Show elapsed time"
+              />
+            }
+          />
+          <SettingRow
+            icon={MousePointerClickIcon}
+            title='"Listen" button'
+            description="Links back to the track on YouTube Music."
+            control={
+              <Switch
+                checked={showButton}
+                onCheckedChange={setShowButton}
+                aria-label="Show Listen button"
+              />
+            }
+          />
+          <SettingRow
+            icon={FilterIcon}
+            title="Only show for songs"
+            description="Hide presence for standalone music videos — only share real album songs."
+            control={
+              <Switch
+                checked={onlySongs}
+                onCheckedChange={setOnlySongs}
+                aria-label="Only show for songs"
+              />
+            }
+          />
+          <SettingRow
+            icon={EyeOffIcon}
+            title="Hide while paused"
+            description="Clear presence when playback is paused, instead of freezing the bar."
+            control={
+              <Switch
+                checked={hideWhenPaused}
+                onCheckedChange={setHideWhenPaused}
+                aria-label="Hide while paused"
+              />
+            }
+          />
+        </>
       )}
     </Group>
   );

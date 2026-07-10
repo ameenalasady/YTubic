@@ -64,6 +64,11 @@ tauri-plugin-notification = "2"
 # as "Unknown app", and WebKitGTK doesn't bridge its media session to MPRIS at
 # all. See src/media.rs.
 souvlaki = "0.7"
+# Discord Rich Presence: broadcasts the current track to the user's Discord
+# profile over Discord's local IPC socket. Entirely opt-in and configured
+# from Settings → Integrations (client ID + which fields to share). See
+# src/discord.rs.
+discord-rich-presence = "1.1.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
