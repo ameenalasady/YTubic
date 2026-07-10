@@ -152,7 +152,19 @@ const HeroLayout = memo(function HeroLayout({
 }) {
   const hasButtons = !!(config.onPlay || config.onShuffle || config.actions);
   return (
-    <div className="flex flex-row items-end gap-6 px-6 pt-3 pb-4">
+    <div
+      className={cn(
+        "flex flex-row gap-6 px-6 pt-3 pb-4",
+        // Album/playlist covers are always exactly size-40, so bottom-
+        // aligning with the text column reads as an intentional
+        // baseline. An artist's text column (name + listeners +
+        // description + Shuffle button) is often taller than the
+        // size-40 avatar, and items-end would then push the avatar's
+        // TOP below the title's top — the title visibly "pops out"
+        // above the round avatar. Center them instead.
+        config.round ? "items-center" : "items-end",
+      )}
+    >
       <Thumbnail
         thumbnails={config.thumbnails}
         alt={config.title}
