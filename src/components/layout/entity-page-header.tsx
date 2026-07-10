@@ -124,7 +124,13 @@ export function EntityPageHeader() {
       <div
         ref={compactRef}
         aria-hidden="true"
-        className="sticky top-0 z-20 border-b border-transparent bg-background/90 backdrop-blur-md transition-[border-color] duration-200"
+        // `bg-surface`, not `bg-background` — this is the same
+        // translucent-tint-over-the-blurred-cover recipe the sidebar
+        // and player card use (no backdrop-blur needed; the blur
+        // already happened once at the source, on BackgroundCover
+        // itself). `bg-background/90` read as a flat, near-opaque dark
+        // slab that ignored the ambient tint entirely.
+        className="sticky top-0 z-20 border-b border-transparent bg-surface transition-[border-color] duration-200"
         style={{
           height: COMPACT_HEIGHT,
           marginTop: -COMPACT_HEIGHT,
