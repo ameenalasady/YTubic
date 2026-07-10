@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ActivityIcon,
+  ArrowLeftIcon,
+  ChevronRightIcon,
   DiscAlbumIcon,
   ExternalLinkIcon,
   EyeOffIcon,
@@ -18,6 +20,7 @@ import {
   RadioIcon,
   TimerIcon,
   TypeIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -30,12 +33,127 @@ import { useLastfmStore, isLastfmLinked } from "@/lib/store/lastfm";
 import { authorizeUrl, getSession, getToken } from "@/lib/lastfm/api";
 import { useDiscordStore, isDiscordConfigured } from "@/lib/store/discord";
 
+type IntegrationId = "lastfm" | "discord";
+
+/**
+ * List → detail navigation: the tab opens on a flat list of available
+ * integrations (name + live status), and picking one drills into its
+ * own submenu with a back row. Keeps each integration's settings from
+ * cluttering a single long scroll as more integrations are added.
+ */
 export function IntegrationsTab() {
+  const [active, setActive] = useState<IntegrationId | null>(null);
+
+  if (active === "lastfm") {
+    return (
+      <TabPane tightTop>
+        <BackRow label="Last.fm" onBack={() => setActive(null)} />
+        <LastfmGroup />
+      </TabPane>
+    );
+  }
+  if (active === "discord") {
+    return (
+      <TabPane tightTop>
+        <BackRow label="Discord Rich Presence" onBack={() => setActive(null)} />
+        <DiscordGroup />
+      </TabPane>
+    );
+  }
+
   return (
     <TabPane tightTop>
-      <LastfmGroup />
-      <DiscordGroup />
+      <IntegrationListRow
+        icon={Music2Icon}
+        title="Last.fm"
+        status={<LastfmStatusBadge />}
+        onClick={() => setActive("lastfm")}
+      />
+      <IntegrationListRow
+        icon={MessageCircleIcon}
+        title="Discord Rich Presence"
+        status={<DiscordStatusBadge />}
+        onClick={() => setActive("discord")}
+      />
     </TabPane>
+  );
+}
+
+/** Back-navigation row atop a drilled-in integration's settings. Mirrors
+ *  the SettingRow row-height/padding language so the submenu reads as a
+ *  continuation of the same flat list, not a different surface. */
+function BackRow({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="flex items-center gap-2 py-4 text-sm font-medium text-muted-foreground hover:text-foreground"
+    >
+      <ArrowLeftIcon className="size-4" />
+      {label}
+    </button>
+  );
+}
+
+/** Clickable summary row for the integrations list — same visual shape
+ *  as SettingRow (icon tile + title) with a status control and chevron
+ *  standing in for SettingRow's `control` slot. */
+function IntegrationListRow({
+  icon: Icon,
+  title,
+  status,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  status: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} className="text-left">
+      <SettingRow
+        icon={Icon}
+        title={title}
+        control={
+          <div className="flex shrink-0 items-center gap-2">
+            {status}
+            <ChevronRightIcon className="size-4 text-muted-foreground" />
+          </div>
+        }
+      />
+    </button>
+  );
+}
+
+function LastfmStatusBadge() {
+  const { apiKey, apiSecret, sessionKey, username } = useLastfmStore();
+  const linked = isLastfmLinked({ apiKey, apiSecret, sessionKey });
+  return linked ? (
+    <Badge
+      variant="secondary"
+      className="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+    >
+      {username ? `@${username}` : "Connected"}
+    </Badge>
+  ) : (
+    <Badge variant="outline">Not connected</Badge>
+  );
+}
+
+function DiscordStatusBadge() {
+  const { enabled, applicationId } = useDiscordStore();
+  const configured = isDiscordConfigured({ enabled, applicationId });
+  return (
+    <Badge
+      variant={enabled ? "secondary" : "outline"}
+      className={
+        enabled && configured
+          ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400"
+          : undefined
+      }
+    >
+      {!enabled ? "Disabled" : configured ? "Enabled" : "Needs Client ID"}
+    </Badge>
   );
 }
 
