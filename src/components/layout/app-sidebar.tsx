@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,7 +12,9 @@ import {
   SettingsIcon,
   HeartIcon,
   ListMusicIcon,
+  PinIcon,
   PinOffIcon,
+  EyeOffIcon,
   UserPlusIcon,
   UserCogIcon,
   UsersRoundIcon,
@@ -89,7 +91,6 @@ const MENU_BTN_CLS = "group-data-[collapsible=icon]:mx-auto";
 export function AppSidebar() {
   const { location } = useRouterState();
   const pinned = usePinned();
-  const unpin = usePinnedPlaylistsStore((s) => s.unpin);
   const hidden = useHidden();
 
   const loggedIn = useQuery({
@@ -234,53 +235,22 @@ export function AppSidebar() {
 
               {pinned.map((p) => (
                 <SidebarMenuItem key={p.id}>
-                  <ContextMenu>
-                    <ContextMenuTrigger asChild>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={isPlaylistOn(p.id)}
-                        tooltip={p.title}
-                        className={MENU_BTN_CLS}
-                      >
-                        <Link to="/playlist/$id" params={{ id: p.id }}>
-                          {p.thumbnailUrl ? (
-                            <img
-                              src={p.thumbnailUrl}
-                              alt=""
-                              className="size-4 shrink-0 rounded-sm object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <ListMusicIcon />
-                          )}
-                          <span>{p.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem onSelect={() => unpin(p.id)}>
-                        <PinOffIcon />
-                        Unpin from sidebar
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                </SidebarMenuItem>
-              ))}
-
-              {libraryItems.map((it) => {
-                const thumbnailUrl = pickThumbnail(it.thumbnails, 32);
-                return (
-                  <SidebarMenuItem key={it.id}>
+                  <PlaylistRowMenu
+                    id={p.id}
+                    title={p.title}
+                    thumbnailUrl={p.thumbnailUrl}
+                    pinned
+                  >
                     <SidebarMenuButton
                       asChild
-                      isActive={isPlaylistOn(it.id)}
-                      tooltip={it.title}
+                      isActive={isPlaylistOn(p.id)}
+                      tooltip={p.title}
                       className={MENU_BTN_CLS}
                     >
-                      <Link to="/playlist/$id" params={{ id: it.id }}>
-                        {thumbnailUrl ? (
+                      <Link to="/playlist/$id" params={{ id: p.id }}>
+                        {p.thumbnailUrl ? (
                           <img
-                            src={thumbnailUrl}
+                            src={p.thumbnailUrl}
                             alt=""
                             className="size-4 shrink-0 rounded-sm object-cover"
                             loading="lazy"
@@ -288,9 +258,46 @@ export function AppSidebar() {
                         ) : (
                           <ListMusicIcon />
                         )}
-                        <span>{it.title}</span>
+                        <span>{p.title}</span>
                       </Link>
                     </SidebarMenuButton>
+                  </PlaylistRowMenu>
+                </SidebarMenuItem>
+              ))}
+
+              {libraryItems.map((it) => {
+                const thumbnailUrl = pickThumbnail(it.thumbnails, 32);
+                return (
+                  <SidebarMenuItem key={it.id}>
+                    <PlaylistRowMenu
+                      id={it.id}
+                      title={it.title}
+                      thumbnailUrl={
+                        it.thumbnails[it.thumbnails.length - 1]?.url
+                      }
+                      pinned={false}
+                    >
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isPlaylistOn(it.id)}
+                        tooltip={it.title}
+                        className={MENU_BTN_CLS}
+                      >
+                        <Link to="/playlist/$id" params={{ id: it.id }}>
+                          {thumbnailUrl ? (
+                            <img
+                              src={thumbnailUrl}
+                              alt=""
+                              className="size-4 shrink-0 rounded-sm object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <ListMusicIcon />
+                          )}
+                          <span>{it.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </PlaylistRowMenu>
                   </SidebarMenuItem>
                 );
               })}
@@ -316,6 +323,54 @@ export function AppSidebar() {
         <UserProfile />
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+/**
+ * Right-click menu for a sidebar playlist row: pin/unpin plus hide. A
+ * playlist that's currently hidden never reaches this list (filtered out
+ * in AppSidebar), so there's no "unhide" branch here — that lives on the
+ * Library card instead (see PlaylistPinContextMenu in shelf-card.tsx),
+ * which is where a hidden playlist is still visible and reversible.
+ */
+function PlaylistRowMenu({
+  id,
+  title,
+  thumbnailUrl,
+  pinned,
+  children,
+}: {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+  pinned: boolean;
+  children: ReactNode;
+}) {
+  const pin = usePinnedPlaylistsStore((s) => s.pin);
+  const unpin = usePinnedPlaylistsStore((s) => s.unpin);
+  const hide = usePinnedPlaylistsStore((s) => s.hide);
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        {pinned ? (
+          <ContextMenuItem onSelect={() => unpin(id)}>
+            <PinOffIcon />
+            Unpin from sidebar
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={() => pin({ id, title, thumbnailUrl })}>
+            <PinIcon />
+            Pin to sidebar
+          </ContextMenuItem>
+        )}
+        <ContextMenuItem onSelect={() => hide(id)}>
+          <EyeOffIcon />
+          Hide from sidebar
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
