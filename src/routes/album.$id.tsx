@@ -64,13 +64,21 @@ function AlbumPageView() {
     data.duration,
   ].filter(Boolean) as string[];
 
-  // Album rows don't carry a per-track thumbnail (the cover is shared at
-  // the album level), so before queuing we backfill each row with the
-  // album cover. Without this the player card and background cover render
-  // empty for tracks played from an album page.
-  const tracksWithCover = data.tracks.map((t) =>
-    t.thumbnails.length > 0 ? t : { ...t, thumbnails: data.thumbnails },
-  );
+  // Album-page rows come back from YT without per-row thumbnail,
+  // artist, or album info — that data isn't repeated on every row of
+  // an album's own tracklist the way it is in search results or a
+  // playlist, since it's implied by the page itself. Backfill it from
+  // the album level before queuing/display: without the cover, the
+  // player card and background cover render empty; without
+  // artists/album/albumId, the player card's artist/album links (and
+  // the track list's own artist column) have nothing to show.
+  const tracksWithCover = data.tracks.map((t) => ({
+    ...t,
+    thumbnails: t.thumbnails.length > 0 ? t.thumbnails : data.thumbnails,
+    artists: t.artists?.length ? t.artists : data.artists,
+    album: t.album ?? data.title,
+    albumId: t.albumId ?? data.id,
+  }));
 
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
@@ -109,7 +117,10 @@ function AlbumPageView() {
 
       <JumpToCurrentButton tracks={tracksWithCover} />
 
-      <TrackList tracks={tracksWithCover} hideThumbnails />
+      {/* hideAlbum: every row's `album` now backfills to this same
+          album (see tracksWithCover above) — showing an Album column
+          here would just repeat the page's own title on every row. */}
+      <TrackList tracks={tracksWithCover} hideThumbnails hideAlbum />
     </div>
   );
 }
