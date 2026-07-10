@@ -40,6 +40,7 @@ import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
 import { cn } from "@/lib/utils";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
+import { usePanelsStore } from "@/lib/store/panels";
 import {
   useTrackSourceStore,
   type SourceKind,
@@ -443,14 +444,17 @@ export function PlayerBar({
   // shows a spinner instead of the Play icon.
   const loading = status === "loading" && playing;
 
-  // The right-side variant is fixed-positioned in the main app shell.
-  // The floating-window variant fills its parent container (the
-  // floating window's body), where positioning is owned by that
-  // window's own layout.
+  // The right-side variant is fixed-positioned in the main app shell,
+  // sized to the user's resizable card width. The floating-window
+  // variant fills its parent container (the floating window's body,
+  // whose own size the user resizes at the OS level instead), where
+  // positioning is owned by that window's own layout.
+  const cardWidth = usePanelsStore((s) => s.cardWidth);
   const wrapperClass =
     variant === "right"
-      ? "fixed bottom-2 right-2 top-(--titlebar-h) z-10 flex w-[22rem] flex-col rounded-[10px] border border-sidebar-border bg-surface"
+      ? "fixed bottom-2 right-2 top-(--titlebar-h) z-10 flex flex-col rounded-[10px] border border-sidebar-border bg-surface"
       : "absolute inset-0 flex flex-col bg-surface";
+  const wrapperStyle = variant === "right" ? { width: cardWidth } : undefined;
 
   return (
     // shadcn's SidebarProvider injects a nested TooltipProvider with
@@ -463,7 +467,7 @@ export function PlayerBar({
     // 300ms, which makes the next tooltip pop up instantly — annoying
     // when the buttons are densely packed).
     <TooltipProvider delayDuration={800} skipDelayDuration={0}>
-    <aside className={wrapperClass}>
+    <aside className={wrapperClass} style={wrapperStyle}>
       {/* Queue overlay vs. cover-and-lyrics body. AnimatePresence
           crossfades the two when the user toggles the queue button.
           Both branches fill the card above the bottom action row

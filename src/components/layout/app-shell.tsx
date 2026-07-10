@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { PlayerBar } from "@/components/layout/player-bar";
@@ -27,6 +27,12 @@ import { useWhatsNewOnUpdate } from "@/lib/store/whats-new";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
+import {
+  usePanelsStore,
+  CARD_CONTENT_GAP,
+  CARD_EDGE_GAP,
+} from "@/lib/store/panels";
+import { usePanelResize } from "@/lib/panel-resize";
 import { usePremiumStatusSync } from "@/lib/store/premium";
 import { useCloseBehaviorSync, useSettingsStore } from "@/lib/store/settings";
 import { useDiscordPresenceSync } from "@/lib/store/discord";
@@ -35,7 +41,6 @@ import {
   useAccountsChangedListener,
   useLoginSuccessListener,
 } from "@/lib/store/accounts";
-import { cn } from "@/lib/utils";
 
 function isEditableTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
@@ -96,6 +101,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const mode = useLayoutStore((s) => s.mode);
   const setMode = useLayoutStore((s) => s.setMode);
   const background = useSettingsStore((s) => s.background);
+  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
+  const cardWidth = usePanelsStore((s) => s.cardWidth);
   // The player UI is hidden whenever there's no active track —
   // covers the "Nothing playing" empty state at first launch and
   // after the queue is cleared. The mode itself stays the same; the
@@ -214,7 +221,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <SidebarProvider
         style={
           {
-            "--sidebar-width": "13rem",
+            "--sidebar-width": `${sidebarWidth}px`,
             "--sidebar-width-icon": "4rem",
           } as React.CSSProperties
         }
@@ -227,16 +234,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           <TopBar />
           <div className="relative flex min-h-0 flex-1">
             <AppSidebar />
-            {/* In `right` mode we reserve 23rem on the right for the
-                floating player card — but only when a track is
-                actually loaded; the empty state shouldn't carve out
-                dead space. `bottom` and `floating` follow the same
-                "hide when no track" rule. */}
+            <SidebarResizeHandle />
+            {/* In `right` mode we reserve the card's width (plus a gap)
+                on the right for the floating player card — but only
+                when a track is actually loaded; the empty state
+                shouldn't carve out dead space. `bottom` and `floating`
+                follow the same "hide when no track" rule. */}
             <div
-              className={cn(
-                "relative z-10 flex min-h-0 min-w-0 flex-1 flex-col",
-                mode === "right" && hasTrack && "pr-[23rem]",
-              )}
+              className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col"
+              style={{
+                paddingRight:
+                  mode === "right" && hasTrack
+                    ? cardWidth + CARD_CONTENT_GAP
+                    : undefined,
+              }}
             >
               {/* Plain scroller — NOT Radix ScrollArea. Radix wraps the
                   content in `display: table; min-width: 100%` which grows
@@ -257,7 +268,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               </main>
               {mode === "bottom" && hasTrack && <PlayerBarBottom />}
             </div>
-            {mode === "right" && hasTrack && <PlayerBar />}
+            {mode === "right" && hasTrack && (
+              <>
+                <PlayerBar />
+                <CardResizeHandle />
+              </>
+            )}
             {mode === "floating" && hasTrack && <FloatingPlayerSync />}
           </div>
           <DragSnapOverlay />
@@ -269,6 +285,73 @@ export function AppShell({ children }: { children: ReactNode }) {
       </SidebarProvider>
       <Toaster />
     </TooltipProvider>
+  );
+}
+
+/**
+ * Drag handle on the sidebar's right edge. Positioned by `left:
+ * sidebarWidth` against the same `relative` wrapper the sidebar itself
+ * is pinned to, so it always tracks the sidebar's actual right edge —
+ * including while collapsed to icon width, where it hides itself
+ * rather than let a stray handle imply the icon rail can be resized.
+ * Double-click resets to the default width.
+ */
+function SidebarResizeHandle() {
+  const { state } = useSidebar();
+  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
+  const setSidebarWidth = usePanelsStore((s) => s.setSidebarWidth);
+  const resetSidebarWidth = usePanelsStore((s) => s.resetSidebarWidth);
+  const { onPointerDown, onDoubleClick } = usePanelResize({
+    getWidth: () => usePanelsStore.getState().sidebarWidth,
+    setWidth: setSidebarWidth,
+    direction: "grow-right",
+    onReset: resetSidebarWidth,
+  });
+
+  if (state === "collapsed") return null;
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      className="absolute top-(--titlebar-h) bottom-0 z-20 w-1.5 -translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
+      style={{ left: sidebarWidth }}
+    />
+  );
+}
+
+/**
+ * Drag handle on the side card's left edge. The card itself is
+ * `position: fixed` with `right-2` (8px) from the window edge, so its
+ * left edge sits `CARD_EDGE_GAP + cardWidth` from the window's right
+ * edge — this handle is positioned the same way (as `right`, not
+ * `left`) so it tracks that edge regardless of sidebar width. Double-
+ * click resets to the default width.
+ */
+function CardResizeHandle() {
+  const cardWidth = usePanelsStore((s) => s.cardWidth);
+  const setCardWidth = usePanelsStore((s) => s.setCardWidth);
+  const resetCardWidth = usePanelsStore((s) => s.resetCardWidth);
+  const { onPointerDown, onDoubleClick } = usePanelResize({
+    getWidth: () => usePanelsStore.getState().cardWidth,
+    setWidth: setCardWidth,
+    direction: "grow-left",
+    onReset: resetCardWidth,
+  });
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize player card"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      className="fixed top-(--titlebar-h) bottom-2 z-20 w-1.5 translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
+      style={{ right: CARD_EDGE_GAP + cardWidth }}
+    />
   );
 }
 

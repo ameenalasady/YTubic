@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
+import { usePanelsStore, CARD_CONTENT_GAP } from "@/lib/store/panels";
 import type { ShelfItem } from "@/lib/innertube/types";
 
 type Props = {
@@ -31,6 +32,8 @@ export function JumpToCurrentButton({ tracks }: Props) {
   const active = usePlaybackStore(currentTrack);
   const { state } = useSidebar();
   const mode = useLayoutStore((s) => s.mode);
+  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
+  const cardWidth = usePanelsStore((s) => s.cardWidth);
   const [activeOnScreen, setActiveOnScreen] = useState(false);
   const [activeAbove, setActiveAbove] = useState(false);
 
@@ -89,14 +92,15 @@ export function JumpToCurrentButton({ tracks }: Props) {
 
   if (!active || !inList || activeOnScreen) return null;
 
-  // Match the sidebar's own width values from SidebarProvider (app-shell)
-  // so the pill stays horizontally centered in the visible content area.
-  // The right edge moves with the player layout: tucked next to the
-  // 22rem side card in `right` mode, hugging the window edge in
+  // Match the sidebar's and side card's own (now user-resizable) widths
+  // so the pill stays horizontally centered in the visible content
+  // area. The right edge moves with the player layout: tucked next to
+  // the side card in `right` mode, hugging the window edge in
   // `bottom`/`floating` modes. The bottom offset lifts above the
   // bottom-bar when it's present.
-  const left = state === "collapsed" ? "4rem" : "13rem";
-  const right = mode === "right" ? "23rem" : "1rem";
+  const left = state === "collapsed" ? "4rem" : `${sidebarWidth}px`;
+  const right =
+    mode === "right" ? `${cardWidth + CARD_CONTENT_GAP}px` : "1rem";
   const bottom = mode === "bottom" ? "6rem" : "1rem";
   const Icon = activeAbove ? ArrowUpIcon : ArrowDownIcon;
 
