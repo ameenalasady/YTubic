@@ -1,7 +1,11 @@
 import { memo, useEffect, useRef } from "react";
 import { PlayIcon, ShuffleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Thumbnail, resolveMaxCoverUrl } from "@/components/shared/thumbnail";
+import {
+  Thumbnail,
+  pickHighResThumbnail,
+  resolveMaxCoverUrl,
+} from "@/components/shared/thumbnail";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { cn } from "@/lib/utils";
 import {
@@ -170,7 +174,13 @@ const HeroLayout = memo(function HeroLayout({
         type="button"
         onClick={() => {
           const url = resolveMaxCoverUrl(config.thumbnails);
-          if (url) openCoverLightbox(url, config.title);
+          if (url) {
+            openCoverLightbox(
+              url,
+              pickHighResThumbnail(config.thumbnails),
+              config.title,
+            );
+          }
         }}
         aria-label={`Enlarge cover for ${config.title}`}
         className={cn(

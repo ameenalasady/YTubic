@@ -23,7 +23,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Thumbnail, resolveMaxCoverUrl } from "@/components/shared/thumbnail";
+import {
+  Thumbnail,
+  pickHighResThumbnail,
+  resolveMaxCoverUrl,
+} from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
 import { AlbumLink } from "@/components/shared/album-link";
@@ -85,7 +89,13 @@ export function PlayerBarBottom() {
     onClick: () => {
       if (!track) return;
       const url = resolveMaxCoverUrl(track.thumbnails, iTunesCover);
-      if (url) openCoverLightbox(url, track.title);
+      if (url) {
+        openCoverLightbox(
+          url,
+          pickHighResThumbnail(track.thumbnails),
+          track.title,
+        );
+      }
     },
   });
 
