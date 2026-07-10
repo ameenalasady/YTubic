@@ -15,6 +15,7 @@ import { EntityPageHeader } from "@/components/layout/entity-page-header";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { ChannelPickerDialog } from "@/components/layout/channel-picker-dialog";
 import { WhatsNewDialog } from "@/components/layout/whats-new-dialog";
+import { CoverLightboxDialog } from "@/components/layout/cover-lightbox-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAudioEngine } from "@/lib/audio-engine";
@@ -281,6 +282,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SettingsDialog />
           <ChannelPickerDialog />
           <WhatsNewDialog />
+          <CoverLightboxDialog />
         </div>
       </SidebarProvider>
       <Toaster />

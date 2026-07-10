@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef } from "react";
 import { PlayIcon, ShuffleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Thumbnail } from "@/components/shared/thumbnail";
+import { Thumbnail, resolveMaxCoverUrl } from "@/components/shared/thumbnail";
+import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { cn } from "@/lib/utils";
 import {
   useEntityHeaderStore,
@@ -165,17 +166,30 @@ const HeroLayout = memo(function HeroLayout({
         config.round ? "items-center" : "items-end",
       )}
     >
-      <Thumbnail
-        thumbnails={config.thumbnails}
-        alt={config.title}
-        round={config.round}
+      <button
+        type="button"
+        onClick={() => {
+          const url = resolveMaxCoverUrl(config.thumbnails);
+          if (url) openCoverLightbox(url, config.title);
+        }}
+        aria-label={`Enlarge cover for ${config.title}`}
         className={cn(
-          "size-40 shrink-0",
-          config.round ? "" : "border border-hairline shadow-lg",
+          "block shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          config.round ? "rounded-full" : "rounded-md",
         )}
-        targetSize={512}
-        highRes
-      />
+      >
+        <Thumbnail
+          thumbnails={config.thumbnails}
+          alt={config.title}
+          round={config.round}
+          className={cn(
+            "size-40 shrink-0",
+            config.round ? "" : "border border-hairline shadow-lg",
+          )}
+          targetSize={512}
+          highRes
+        />
+      </button>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <h1 className="truncate text-3xl font-bold leading-tight tracking-tight md:text-4xl">
           {config.title}

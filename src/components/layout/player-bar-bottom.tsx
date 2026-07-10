@@ -23,7 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Thumbnail } from "@/components/shared/thumbnail";
+import { Thumbnail, resolveMaxCoverUrl } from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
 import { AlbumLink } from "@/components/shared/album-link";
@@ -43,6 +43,7 @@ import {
 import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
 import { cn } from "@/lib/utils";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
+import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 
 /**
@@ -80,7 +81,13 @@ export function PlayerBarBottom() {
   const [scrub, setScrub] = useState<number | null>(null);
   const iTunesCover = useITunesCover(track);
   const lyricsState = useLyricsView(track);
-  const { onPointerDown: onCoverPointerDown } = usePlayerCoverDrag();
+  const { onPointerDown: onCoverPointerDown } = usePlayerCoverDrag({
+    onClick: () => {
+      if (!track) return;
+      const url = resolveMaxCoverUrl(track.thumbnails, iTunesCover);
+      if (url) openCoverLightbox(url, track.title);
+    },
+  });
 
   const hasTrack = !!track;
   // See player-bar.tsx — spinner only while the user has actually

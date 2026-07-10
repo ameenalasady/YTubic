@@ -79,7 +79,19 @@ export const usePlayerDragStore = create<DragState>((set) => ({
  * `enabled = false` (e.g. inside the floating window itself) skips
  * everything so the OS title-bar drag isn't competed with.
  */
-export function usePlayerCoverDrag({ enabled = true }: { enabled?: boolean } = {}) {
+export function usePlayerCoverDrag({
+  enabled = true,
+  onClick,
+}: {
+  enabled?: boolean;
+  /** Fired on pointerup when the press never crossed DRAG_THRESHOLD —
+   *  i.e. a plain click. Letting the hook decide (rather than adding a
+   *  sibling `onClick` prop on the element) avoids a native click also
+   *  firing right after a drag that relocated the player, which a
+   *  same-element press+release `click` event would otherwise do
+   *  regardless of pointer capture. */
+  onClick?: () => void;
+} = {}) {
   const setMode = useLayoutStore((s) => s.setMode);
   const setActive = usePlayerDragStore((s) => s.setActive);
   const setZone = usePlayerDragStore((s) => s.setZone);
@@ -96,10 +108,12 @@ export function usePlayerCoverDrag({ enabled = true }: { enabled?: boolean } = {
   const setActiveRef = useRef(setActive);
   const setZoneRef = useRef(setZone);
   const setCursorRef = useRef(setCursor);
+  const onClickRef = useRef(onClick);
   setModeRef.current = setMode;
   setActiveRef.current = setActive;
   setZoneRef.current = setZone;
   setCursorRef.current = setCursor;
+  onClickRef.current = onClick;
 
   // Make sure we never leave the global drag-flag stuck on if the
   // component unmounts mid-drag (e.g. user switches mode via the
@@ -162,7 +176,10 @@ export function usePlayerCoverDrag({ enabled = true }: { enabled?: boolean } = {
       const onUp = (ev: PointerEvent) => {
         const wasDragging = draggingRef.current;
         cleanup();
-        if (!wasDragging) return;
+        if (!wasDragging) {
+          onClickRef.current?.();
+          return;
+        }
 
         const zone = detectZone(ev.clientX, ev.clientY);
         const currentMode = useLayoutStore.getState().mode;

@@ -32,13 +32,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Slider } from "@/components/ui/slider";
-import { Thumbnail } from "@/components/shared/thumbnail";
+import { Thumbnail, resolveMaxCoverUrl } from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
 import { AlbumLink } from "@/components/shared/album-link";
 import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
 import { cn } from "@/lib/utils";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
+import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { usePanelsStore } from "@/lib/store/panels";
 import {
@@ -433,6 +434,11 @@ export function PlayerBar({
   // attach our own handler there.
   const { onPointerDown: onCoverPointerDown } = usePlayerCoverDrag({
     enabled: variant !== "floating",
+    onClick: () => {
+      if (!track) return;
+      const url = resolveMaxCoverUrl(track.thumbnails, iTunesCover);
+      if (url) openCoverLightbox(url, track.title);
+    },
   });
 
   const hasTrack = !!track;

@@ -87,6 +87,27 @@ export function pickHighResThumbnail(
   return sorted[sorted.length - 1].url;
 }
 
+/**
+ * Resolve the best available URL for a "maximize the cover" lightbox —
+ * larger than anything `<Thumbnail>` itself requests, since this is
+ * the one place the image is shown at (near) full size. Prefers an
+ * external override (e.g. iTunes 3000×3000 art) exactly like
+ * `<Thumbnail overrideHighRes>` does; otherwise takes the largest
+ * API-shipped variant and asks for an even bigger rewrite via
+ * `getHighResVariant`. Unlike `<Thumbnail>`, this doesn't go through
+ * the disk-cache resolve step — a one-off lightbox load doesn't need
+ * it, and the plain URL (upgraded or not) is a fine direct `<img src>`.
+ */
+export function resolveMaxCoverUrl(
+  thumbnails: YtThumbnail[],
+  overrideHighRes?: string | null,
+): string | null {
+  if (overrideHighRes) return overrideHighRes;
+  const largest = pickHighResThumbnail(thumbnails);
+  if (!largest) return null;
+  return getHighResVariant(largest, 1600) ?? largest;
+}
+
 type Props = {
   thumbnails: YtThumbnail[];
   alt: string;
