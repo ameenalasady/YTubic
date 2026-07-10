@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef } from "react";
 import { PlayIcon, ShuffleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Thumbnail } from "@/components/shared/thumbnail";
@@ -9,73 +9,87 @@ import {
 } from "@/lib/store/entity-header";
 
 /**
- * Two-state morphing route header (hero ↔ compact bar).
+ * Route header: a full hero that scrolls away as ordinary page
+ * content, plus a compact bar that sticks to the top of the scroller
+ * and fades in as the hero scrolls past.
  *
- * Architecture: lives **outside** `<main>` in flex flow so track rows
- * inside `<main>` are clipped by `<main>`'s `overflow-hidden` and can
- * never appear under the bar — that's how we get the "no own
- * background, but tracks aren't visible behind it" effect without
- * adding a backdrop blur.
+ * Architecture: rendered as the FIRST CHILD of `<main class="app-scroll">`
+ * (the scroll container itself), not above it. The hero is then just
+ * scroll content — no artificial height snap between a "hero" and
+ * "compact" box, no resizing `<main>` on scroll, no virtualizer thrash
+ * from a moving scrollport. That resize-avoidance was the reason the
+ * previous version deliberately snapped height instead of animating
+ * it; putting the hero inside the scroller removes the need for the
+ * snap (and the jump it caused) entirely.
  *
- * Performance: every animated property is either `opacity` or
- * `transform` (both composited off the main thread on a dedicated GPU
- * layer). `will-change` + `translate3d` force layer promotion so the
- * compositor doesn't have to create a new layer at the moment the
- * transition begins.
+ * The compact bar is a sibling placed immediately after the hero with
+ * `margin-top: -COMPACT_HEIGHT`, so it overlaps the hero's own bottom
+ * edge and contributes zero extra flow height — content below follows
+ * the hero exactly as before. `position: sticky` still works from
+ * that overlapped position: it has nowhere to stick to until the hero
+ * has actually scrolled that far up, at which point it pins under the
+ * title bar and fades to opaque.
  *
- * The container height is the one non-GPU property — it has to
- * shrink so the page below moves up. Optimisations to keep that
- * cheap:
- *   • `contain: paint` isolates the paint subtree.
- *   • `HeroLayout` and `CompactLayout` are `React.memo`'d so a parent
- *     re-render on `compact` toggle doesn't rebuild their subtrees.
- *   • The scroll listener is rAF-throttled so we hit `setState` at
- *     most once per frame even when the browser fires 120 Hz scroll
- *     events.
- *
- * Specifically NOT used: Motion's `layout` / `layoutId`. FLIP measures
- * old + new bounding boxes every render and tweens `transform: scale`
- * between them. That was the source of (a) the buttons stretching
- * (different `default` vs `sm` widths produced `scaleX ≠ 1`), and
- * (b) the 10 fps lag from doing FLIP on five+ elements at once.
+ * Performance: the fade is driven by direct DOM style writes on a ref
+ * inside a rAF-throttled scroll handler — not React state — so
+ * scrolling through the short fade window doesn't re-render anything.
  */
-
-/** Hysteresis thresholds. Narrow but non-zero so a sub-pixel jitter
- *  at the very top doesn't flicker the bar. */
-const COMPACT_AT = 16;
-const LARGE_AT = 4;
 
 /** Fixed pixel height of the compact bar. */
 const COMPACT_HEIGHT = 72;
 
-/** Animation timing — kept tight so the cross-fade reads as a snap
- *  rather than a leisurely tween (user feedback: previous 240 ms felt
- *  draggy). */
-const TRANSITION_MS = 200;
-const EASE = "cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+/** Px of scroll, immediately before the compact bar would stick, over
+ *  which it fades in — replaces the old binary 16px snap with a
+ *  continuous transition so the first bit of scrolling has nothing to
+ *  jump. */
+const FADE_RANGE = 40;
 
 export function EntityPageHeader() {
   const config = useEntityHeaderStore((s) => s.config);
-  const [compact, setCompact] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
-  const [heroHeight, setHeroHeight] = useState(0);
+  const compactRef = useRef<HTMLDivElement>(null);
+  const heroHeightRef = useRef(0);
 
-  // rAF-throttled scroll listener: we only need to update `compact`
-  // once per frame at most. Without this the listener fires on every
-  // wheel/touch event (120 Hz on high-refresh displays), which is
-  // wasted work even though setState bails out on equal values.
   useEffect(() => {
-    const scroller = document.querySelector<HTMLElement>("main.app-scroll");
-    if (!scroller) return;
+    const hero = heroRef.current;
+    const compact = compactRef.current;
+    if (!hero || !compact) return;
+
+    const applyProgress = (scrollTop: number) => {
+      const threshold = heroHeightRef.current - COMPACT_HEIGHT;
+      const fadeStart = threshold - FADE_RANGE;
+      const t =
+        FADE_RANGE <= 0
+          ? scrollTop >= threshold
+            ? 1
+            : 0
+          : Math.min(1, Math.max(0, (scrollTop - fadeStart) / FADE_RANGE));
+      const active = t > 0.5;
+      compact.style.opacity = String(t);
+      compact.style.transform = `translate3d(0, ${(1 - t) * -6}px, 0)`;
+      compact.style.pointerEvents = active ? "auto" : "none";
+      compact.style.borderBottomColor = active
+        ? "var(--border)"
+        : "transparent";
+      compact.setAttribute("aria-hidden", active ? "false" : "true");
+    };
+
+    const measure = () => {
+      heroHeightRef.current = hero.offsetHeight;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(hero);
+
+    const scroller = compact.closest<HTMLElement>("main.app-scroll");
+    if (!scroller) {
+      return () => ro.disconnect();
+    }
+
     let raf = 0;
     const tick = () => {
       raf = 0;
-      const top = scroller.scrollTop;
-      setCompact((prev) => {
-        if (prev && top <= LARGE_AT) return false;
-        if (!prev && top >= COMPACT_AT) return true;
-        return prev;
-      });
+      applyProgress(scroller.scrollTop);
     };
     const onScroll = () => {
       if (raf) return;
@@ -84,75 +98,44 @@ export function EntityPageHeader() {
     tick();
     scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => {
+      ro.disconnect();
       scroller.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
-
-  // Track the hero's natural height so the container's height tween
-  // has a real target. `ResizeObserver` re-measures when content
-  // changes (longer description after a slow fetch, title wrapping
-  // to two lines) without forcing a remount.
-  useEffect(() => {
-    const el = heroRef.current;
-    if (!el) return;
-    const measure = () => setHeroHeight(el.offsetHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
   }, [config]);
 
   if (!config) return null;
 
   return (
-    <div
-      className="relative shrink-0 overflow-hidden"
-      style={{
-        // Height SNAPS instantly between hero and compact — no
-        // `transition: height`. Animating height resized `<main>` on
-        // every frame, and `@tanstack/react-virtual` recomputed
-        // visible rows on each ResizeObserver tick → main-thread
-        // jank. Snapping = virtualizer recomputes once. The opacity
-        // cross-fade below masks the layout snap visually.
-        height: compact ? COMPACT_HEIGHT : heroHeight || "auto",
-        contain: "paint",
-      }}
-    >
-      <div
-        ref={heroRef}
-        aria-hidden={compact}
-        style={{
-          opacity: compact ? 0 : 1,
-          transform: compact
-            ? "translate3d(0, -6px, 0)"
-            : "translate3d(0, 0, 0)",
-          transition: `opacity ${TRANSITION_MS}ms ${EASE}, transform ${TRANSITION_MS}ms ${EASE}`,
-          pointerEvents: compact ? "none" : "auto",
-          willChange: "opacity, transform",
-          backfaceVisibility: "hidden",
-        }}
-      >
+    // Hero and compact bar are DIRECT children of <main> (a Fragment,
+    // not a wrapping div) — sticky positioning stays in effect only
+    // within its parent's box, and that parent needs to span the rest
+    // of the scrollable page, not just the hero's own height. A
+    // wrapping div here would make the parent exactly `heroHeight`
+    // tall (the negative margin below cancels the compact bar's own
+    // contribution), so the compact bar would immediately un-stick
+    // the moment its short parent scrolled out of view — it would
+    // flash in, then disappear on the next bit of scroll. Parenting it
+    // to <main> directly gives it the whole page to stay pinned to.
+    <>
+      <div ref={heroRef}>
         <HeroLayout config={config} />
       </div>
       <div
-        aria-hidden={!compact}
-        className="absolute inset-x-0 top-0"
+        ref={compactRef}
+        aria-hidden="true"
+        className="sticky top-0 z-20 border-b border-transparent bg-background/90 backdrop-blur-md transition-[border-color] duration-200"
         style={{
           height: COMPACT_HEIGHT,
-          opacity: compact ? 1 : 0,
-          transform: compact
-            ? "translate3d(0, 0, 0)"
-            : "translate3d(0, -6px, 0)",
-          transition: `opacity ${TRANSITION_MS}ms ${EASE}, transform ${TRANSITION_MS}ms ${EASE}`,
-          pointerEvents: compact ? "auto" : "none",
+          marginTop: -COMPACT_HEIGHT,
+          opacity: 0,
+          pointerEvents: "none",
           willChange: "opacity, transform",
-          backfaceVisibility: "hidden",
         }}
       >
         <CompactLayout config={config} />
       </div>
-    </div>
+    </>
   );
 }
 

@@ -238,13 +238,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 mode === "right" && hasTrack && "pr-[23rem]",
               )}
             >
-              {/* Route entity header (playlist / album / artist).
-                  Lives ABOVE <main> in flex flow so that
-                  (a) a transparent bar inherits the app-wide
-                      <BackgroundCover> tint directly, and
-                  (b) track rows inside <main> are clipped by <main>'s
-                      overflow and never appear behind the bar. */}
-              <EntityPageHeader />
               {/* Plain scroller — NOT Radix ScrollArea. Radix wraps the
                   content in `display: table; min-width: 100%` which grows
                   to intrinsic width and defeats any nested `overflow-x`
@@ -253,6 +246,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 data-scroll-restoration-id="main-scroll"
                 className="app-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
               >
+                {/* Route entity header (playlist / album / artist).
+                    Lives INSIDE <main> as ordinary scroll content so
+                    scrolling the hero away is just scrolling — no
+                    height snap, no resizing <main>, no virtualizer
+                    thrash. See entity-page-header.tsx for how its
+                    compact bar sticks + fades in. */}
+                <EntityPageHeader />
                 {children}
               </main>
               {mode === "bottom" && hasTrack && <PlayerBarBottom />}
