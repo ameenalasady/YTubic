@@ -4,7 +4,9 @@ import type { Thumbnail as YtThumbnail } from "@/lib/innertube/types";
 
 type Props = {
   title: string;
-  subtitle?: string;
+  /** Rendered directly under the title in the hero (e.g. artist
+   *  links, subscriber count) — plain text or rich content (links). */
+  subtitle?: ReactNode;
   metadata?: string;
   description?: string;
   thumbnails: YtThumbnail[];
@@ -18,11 +20,11 @@ type Props = {
 
 /**
  * Data-only header marker. The actual hero / compact bar UI lives in
- * `<EntityPageHeader>` at the top of the content column (above
- * `<main>`); this component just publishes whatever the current route
- * wants the header to show. Rendering nothing keeps the route's flex
- * column free of an empty slot — the page content (sort menu, track
- * list, etc.) sits flush below the bar.
+ * `<EntityPageHeader>`, rendered as the first child inside `<main>`;
+ * this component just publishes whatever the current route wants the
+ * header to show. Rendering nothing keeps the route's flex column
+ * free of an empty slot — the page content (sort menu, track list,
+ * etc.) sits flush below the bar.
  */
 export function EntityHeader({
   title,

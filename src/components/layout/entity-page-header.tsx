@@ -163,9 +163,9 @@ const HeroLayout = memo(function HeroLayout({
           {config.title}
         </h1>
         {config.subtitle ? (
-          <p className="truncate text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
             {config.subtitle}
-          </p>
+          </div>
         ) : null}
         {config.metadata ? (
           <p className="truncate text-xs text-muted-foreground">

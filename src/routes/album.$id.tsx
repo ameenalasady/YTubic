@@ -75,6 +75,18 @@ function AlbumPageView() {
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
       <EntityHeader
         title={data.title}
+        subtitle={
+          subtitleParts.length > 0 ? (
+            <>
+              {subtitleParts.map((node, i) => (
+                <span key={i} className="inline-flex items-center gap-1">
+                  {node}
+                  {i < subtitleParts.length - 1 ? "," : ""}
+                </span>
+              ))}
+            </>
+          ) : undefined
+        }
         thumbnails={data.thumbnails}
         metadata={metadataParts.join(" • ")}
         onPlay={() => {
@@ -93,16 +105,6 @@ function AlbumPageView() {
           }
         }}
       />
-      {subtitleParts.length > 0 ? (
-        <p className="-mt-4 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-          {subtitleParts.map((node, i) => (
-            <span key={i} className="inline-flex items-center gap-1">
-              {node}
-              {i < subtitleParts.length - 1 ? "," : ""}
-            </span>
-          ))}
-        </p>
-      ) : null}
 
       <JumpToCurrentButton tracks={tracksWithCover} />
 
