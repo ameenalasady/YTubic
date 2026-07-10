@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, MicVocalIcon } from "lucide-react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/lyrics/sources";
 import { usePlaybackStore } from "@/lib/store/playback";
 import type { QueueTrack } from "@/lib/store/playback";
+import { useSettingsStore } from "@/lib/store/settings";
 import { cn } from "@/lib/utils";
 
 const PREF_KEY = "ytm:lyrics-source";
@@ -63,6 +65,10 @@ export type LyricsViewState = {
   setPref: (p: Pref) => void;
   best: LyricsSource | null;
   availability: Record<LyricsSource, Availability>;
+  /** Master on/off, mirrored from the persisted `ytm-settings` store —
+   *  shared across the side card and the floating window. */
+  enabled: boolean;
+  setEnabled: (v: boolean) => void;
 };
 
 /**
@@ -74,6 +80,12 @@ export type LyricsViewState = {
  * Used by the player bar to render `<LyricsBody>` (the flowing area)
  * and `<LyricsSourceButton>` (the mic-icon dropdown) from the same
  * state — without running the underlying queries twice.
+ *
+ * When the user has turned lyrics off, `enabled` gates the underlying
+ * `useLyricsSources` queries so the three network fetches don't fire
+ * at all, and `LyricsBody` skips rendering `<TimedLyrics>` — which is
+ * what actually stops its `requestAnimationFrame` auto-scroll loop and
+ * high-frequency playback-position subscription.
  */
 export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
   const [pref, setPrefState] = useState<Pref>(loadPref);
@@ -82,7 +94,13 @@ export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
     savePref(p);
   };
 
-  const { queries, best, isLoading } = useLyricsSources(track, !!track);
+  const enabled = useSettingsStore((s) => s.lyricsEnabled);
+  const setEnabled = useSettingsStore((s) => s.setLyricsEnabled);
+
+  const { queries, best, isLoading } = useLyricsSources(
+    track,
+    !!track && enabled,
+  );
 
   const availability = useMemo(() => {
     const acc = {} as Record<LyricsSource, Availability>;
@@ -110,11 +128,20 @@ export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
     setPref,
     best,
     availability,
+    enabled,
+    setEnabled,
   };
 }
 
 export function LyricsBody({ state }: { state: LyricsViewState }) {
   if (!state.hasTrack) return null;
+  if (!state.enabled) {
+    return (
+      <p className="px-4 py-2 text-sm text-muted-foreground">
+        Lyrics are turned off.
+      </p>
+    );
+  }
   if (state.isLoading && !state.active) {
     return (
       <p className="px-4 py-2 text-sm text-muted-foreground">
@@ -351,7 +378,7 @@ export function LyricsSourceButton({
   state: LyricsViewState;
   className?: string;
 }) {
-  const { pref, setPref, best, availability } = state;
+  const { pref, setPref, best, availability, enabled, setEnabled } = state;
 
   return (
     <DropdownMenu>
@@ -371,8 +398,19 @@ export function LyricsSourceButton({
         <TooltipContent>Lyrics source</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="w-52">
+        <DropdownMenuCheckboxItem
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          onSelect={(e) => e.preventDefault()}
+        >
+          Show lyrics
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
         <DropdownMenuLabel>Lyrics source</DropdownMenuLabel>
-        <DropdownMenuItem onSelect={() => setPref("auto")}>
+        <DropdownMenuItem
+          disabled={!enabled}
+          onSelect={() => setPref("auto")}
+        >
           <span className="flex-1">
             Auto
             {best ? (
@@ -398,7 +436,7 @@ export function LyricsSourceButton({
             <DropdownMenuItem
               key={s}
               onSelect={() => setPref(s)}
-              disabled={a === "none"}
+              disabled={!enabled || a === "none"}
             >
               <span
                 className={cn("mr-2 size-1.5 shrink-0 rounded-full", dot)}

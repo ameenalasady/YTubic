@@ -21,11 +21,18 @@ type State = {
   /** System toast on track change while the app is in the background
    *  (see `lib/playback-notifications.ts`). */
   playbackNotifications: boolean;
+  /** Master on/off for the lyrics panel, shared by the side card and
+   *  the floating window (see `components/layout/lyrics-view.tsx`).
+   *  Off skips the three lyrics-source fetches and unmounts the
+   *  synced-scroll view entirely, saving network + rAF/CPU cost for
+   *  users who don't use lyrics. */
+  lyricsEnabled: boolean;
   setCloseAction: (v: CloseButtonAction) => void;
   setCacheAutoClean: (v: CacheAutoCleanPeriod) => void;
   markCacheCleaned: () => void;
   setBackground: (v: BackgroundMode) => void;
   setPlaybackNotifications: (v: boolean) => void;
+  setLyricsEnabled: (v: boolean) => void;
 };
 
 /**
@@ -42,12 +49,14 @@ export const useSettingsStore = create<State>()(
       lastCacheCleanAt: 0,
       background: "ambient",
       playbackNotifications: false,
+      lyricsEnabled: true,
       setCloseAction: (closeAction) => set({ closeAction }),
       setCacheAutoClean: (cacheAutoClean) => set({ cacheAutoClean }),
       markCacheCleaned: () => set({ lastCacheCleanAt: Date.now() }),
       setBackground: (background) => set({ background }),
       setPlaybackNotifications: (playbackNotifications) =>
         set({ playbackNotifications }),
+      setLyricsEnabled: (lyricsEnabled) => set({ lyricsEnabled }),
     }),
     { name: "ytm-settings" },
   ),
