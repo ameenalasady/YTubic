@@ -33,7 +33,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
-import { formatBytes, formatRelative } from "@/lib/format";
+import { PERIOD_MS as AUTO_CLEAN_PERIOD_MS } from "@/lib/cache-cleanup";
+import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 import { fetchLibraryTracks } from "@/lib/innertube/library";
 import { clearPrefetchMemo } from "@/lib/stream";
 import { useTrackMetaStore, type TrackMeta } from "@/lib/store/track-meta";
@@ -358,11 +359,27 @@ const AUTO_CLEAN_OPTIONS: { value: CacheAutoCleanPeriod; label: string }[] = [
 function AutoCleanRow({ loggedIn }: { loggedIn: boolean }) {
   const period = useSettingsStore((s) => s.cacheAutoClean);
   const setPeriod = useSettingsStore((s) => s.setCacheAutoClean);
+  const lastCleanAt = useSettingsStore((s) => s.lastCacheCleanAt);
+
+  // Mirror the sweep's own scheduling (cache-cleanup.ts): the next run
+  // is due one period after the last completed sweep. Before the first
+  // sweep (lastCleanAt === 0) or once that moment has already passed, the
+  // 30-min background tick fires it on its next check rather than at a
+  // fixed clock time, so we say "due" instead of showing a stale date.
+  const description = (() => {
+    if (period === "off") return undefined;
+    if (!loggedIn) return "Sign in to enable automatic clean-up.";
+    const nextAt = lastCleanAt + AUTO_CLEAN_PERIOD_MS[period];
+    if (!lastCleanAt || nextAt <= Date.now())
+      return "Next clean-up is due — runs on the next check.";
+    return `Next clean-up ${formatDateTime(nextAt)}`;
+  })();
 
   return (
     <SettingRow
       icon={CalendarClockIcon}
       title="Auto-clean tracks not in library"
+      description={description}
       control={
         <SegmentedControl
           value={period}

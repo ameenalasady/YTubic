@@ -24,6 +24,8 @@ use tower::ServiceExt;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeFile;
 
+mod appid;
+mod media;
 mod ytdlp;
 
 fn sanitize_video_id(id: &str) -> bool {
@@ -2379,6 +2381,19 @@ async fn download_attempt(
         "--no-warnings",
         "--no-part",
         "-q",
+        // YouTube regularly hands out a signed media URL that then 403s
+        // on the very first byte-range request (token/pot desync or
+        // per-URL throttling). Left alone this surfaces as a one-off
+        // "download failed" that a manual re-click fixes. Retrying the
+        // data download and the extractor a few times clears the vast
+        // majority of these inside a single spawn, before the handler
+        // ever returns 502 to the audio element.
+        "--retries",
+        "5",
+        "--extractor-retries",
+        "3",
+        "--socket-timeout",
+        "15",
         "--extractor-args",
     ]);
     cmd.arg(format!("youtube:player_client={player_client}"));
@@ -3053,6 +3068,12 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Register + pin the app's Windows identity (AppUserModelID) so the SMTC
+    // media tile (and notifications, taskbar) resolve to "YTubic" + icon rather
+    // than "Unknown app". Must run before any window is created. No-op off
+    // Windows.
+    appid::init();
+
     let state = StreamServerState::default();
     let port_handle = state.port.clone();
     let token_handle = state.token.clone();
@@ -3122,6 +3143,8 @@ pub fn run() {
             focus_main_window,
             open_player_window,
             close_player_window,
+            media::media_update,
+            media::media_clear,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -3195,6 +3218,11 @@ pub fn run() {
                 )
                 .await;
             });
+            // OS media controls (Windows SMTC tile / Linux MPRIS session,
+            // plus the hardware media keys). setup() runs on the main
+            // thread, which souvlaki requires and where the main window's
+            // HWND is available.
+            media::init(app.handle());
             if let Err(e) = build_tray(app.handle()) {
                 eprintln!("[tray] build failed: {e}");
             }

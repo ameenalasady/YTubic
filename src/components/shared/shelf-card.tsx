@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router";
 import {
   PinIcon,
   PinOffIcon,
+  EyeIcon,
+  EyeOffIcon,
   ChevronRightIcon,
   ZapIcon,
   DumbbellIcon,
@@ -42,6 +44,7 @@ import { ArtistLinks } from "@/components/shared/artist-links";
 import { TrackContextMenu } from "@/components/shared/track-context-menu";
 import { usePlaybackStore } from "@/lib/store/playback";
 import {
+  useIsHidden,
   useIsPinned,
   usePinnedPlaylistsStore,
 } from "@/lib/store/pinned-playlists";
@@ -143,6 +146,13 @@ export function ShelfCard({ item, className }: Props) {
       ? "rounded-lg"
       : "rounded-md";
 
+  // Only playlists are hideable, so this is always false for other kinds
+  // — the badge below scopes itself to hidden playlists. Reading it here
+  // (rather than in a playlist-only sub-component) keeps radiusClass and
+  // the thumbnail layout in one place; the selector is cheap and only
+  // ever changes on an explicit hide/show.
+  const hidden = useIsHidden(item.id);
+
   // Songs, videos and albums carry an artist list — link each artist to
   // their page. Everything else (playlists, artist tiles) keeps the plain
   // subtitle text.
@@ -178,6 +188,25 @@ export function ShelfCard({ item, className }: Props) {
             radiusClass,
           )}
         />
+        {hidden ? (
+          <>
+            {/* Mute the cover and stamp a crossed-out eye so a
+                sidebar-hidden playlist reads as hidden at a glance. */}
+            <div
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute inset-0 bg-background/60",
+                radiusClass,
+              )}
+            />
+            <div
+              title="Hidden from sidebar"
+              className="absolute right-1.5 top-1.5 flex items-center justify-center rounded-md bg-black/65 p-1 text-white shadow-sm backdrop-blur-sm"
+            >
+              <EyeOffIcon className="size-4" />
+            </div>
+          </>
+        ) : null}
       </div>
       <div className="flex min-w-0 flex-col gap-0.5">
         <div
@@ -347,8 +376,11 @@ function PlaylistPinContextMenu({
   children: ReactNode;
 }) {
   const pinned = useIsPinned(item.id);
+  const hidden = useIsHidden(item.id);
   const pin = usePinnedPlaylistsStore((s) => s.pin);
   const unpin = usePinnedPlaylistsStore((s) => s.unpin);
+  const hide = usePinnedPlaylistsStore((s) => s.hide);
+  const unhide = usePinnedPlaylistsStore((s) => s.unhide);
 
   return (
     <ContextMenu>
@@ -372,6 +404,17 @@ function PlaylistPinContextMenu({
           >
             <PinIcon />
             Pin to sidebar
+          </ContextMenuItem>
+        )}
+        {hidden ? (
+          <ContextMenuItem onSelect={() => unhide(item.id)}>
+            <EyeIcon />
+            Show in sidebar
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={() => hide(item.id)}>
+            <EyeOffIcon />
+            Hide from sidebar
           </ContextMenuItem>
         )}
       </ContextMenuContent>

@@ -21,7 +21,8 @@
         "resizable": true,
         "center": true,
         "backgroundColor": "#0a0a0a",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService"
       }
     ],
     "security": {
