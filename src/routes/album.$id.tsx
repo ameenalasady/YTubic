@@ -6,6 +6,7 @@ import { EntityHeader } from "@/components/shared/entity-header";
 import { TrackList } from "@/components/shared/track-list";
 import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { usePlaybackStore } from "@/lib/store/playback";
 
 export const Route = createFileRoute("/album/$id")({
@@ -113,20 +114,26 @@ function AlbumPageView() {
   );
 }
 
+// Mirrors the real hero (EntityPageHeader's HeroLayout) and TrackList
+// row geometry so there's no visible pop when data replaces this:
+// `size-40` cover (never scales up, unlike the old `md:w-56`), `gap-6`
+// row layout, and title/subtitle/metadata bars sized to their real
+// line-heights (text-4xl → h-10, text-sm subtitle → h-5, text-xs
+// metadata → h-4). Rows use the shared zero-gap TrackRowSkeletonList
+// instead of a `gap-8`-spaced stack of bars, matching how the
+// virtualizer actually packs 56px rows with no space between them.
 function AlbumSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end">
-        <Skeleton className="aspect-square w-40 md:w-56" />
-        <div className="flex flex-col gap-2">
+      <div className="flex flex-row items-end gap-6">
+        <Skeleton className="size-40 shrink-0 border border-hairline shadow-lg" />
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
           <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-28" />
         </div>
       </div>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full" />
-      ))}
+      <TrackRowSkeletonList count={8} />
     </div>
   );
 }

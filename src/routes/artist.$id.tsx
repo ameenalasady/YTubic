@@ -9,6 +9,10 @@ import { EntityHeader } from "@/components/shared/entity-header";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { TrackList } from "@/components/shared/track-list";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ShelfSectionSkeleton,
+  TrackRowSkeletonList,
+} from "@/components/shared/skeletons";
 import type { Shelf } from "@/lib/innertube/types";
 
 export const Route = createFileRoute("/artist/$id")({
@@ -110,18 +114,21 @@ function ListShelf({ shelf }: { shelf: Shelf }) {
   );
 }
 
+// Mirrors the real hero (round cover, `data.subscribers` as the
+// subtitle line — text-sm → h-5) plus the page's actual shape below
+// it: a top-songs list shelf followed by carousel shelves.
 function ArtistSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end">
-        <Skeleton className="size-40 rounded-full md:size-48" />
-        <div className="flex flex-col gap-2">
+      <div className="flex flex-row items-end gap-6">
+        <Skeleton className="size-40 shrink-0 rounded-full" />
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
           <Skeleton className="h-10 w-64" />
-          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-5 w-40" />
         </div>
       </div>
-      <Skeleton className="h-40 w-full" />
-      <Skeleton className="h-40 w-full" />
+      <TrackRowSkeletonList count={5} />
+      <ShelfSectionSkeleton titleWidth="w-40" />
     </div>
   );
 }

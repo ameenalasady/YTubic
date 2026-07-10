@@ -30,7 +30,11 @@ import { ShelfCard } from "@/components/shared/shelf-card";
 import { TrackList } from "@/components/shared/track-list";
 import { Thumbnail } from "@/components/shared/thumbnail";
 import { TrackContextMenu } from "@/components/shared/track-context-menu";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ShelfCardSkeleton,
+  ShelfSectionSkeleton,
+  TrackRowSkeletonList,
+} from "@/components/shared/skeletons";
 import { Input } from "@/components/ui/input";
 import { useSearchHistory } from "@/lib/store/search-history";
 import { usePlaybackStore } from "@/lib/store/playback";
@@ -941,31 +945,19 @@ function ShelfSkeleton({
 }) {
   return (
     <section className="flex flex-col gap-3">
+      {/* The title is already known (it's the search filter's own
+          label) before its results load, so show it for real, dimmed,
+          rather than a generic bar. */}
       <h2 className="px-1 text-xl font-semibold tracking-tight text-muted-foreground/60">
         {title}
       </h2>
       {display === "list" ? (
-        <div className="flex flex-col gap-1">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 p-2">
-              <Skeleton className="size-10 shrink-0 rounded-sm" />
-              <div className="flex flex-1 flex-col gap-1.5">
-                <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="h-3 w-1/4" />
-              </div>
-              <Skeleton className="h-3 w-10 shrink-0" />
-            </div>
-          ))}
-        </div>
+        <TrackRowSkeletonList count={5} />
       ) : (
-        <div className="flex gap-2 overflow-hidden">
+        <div className="flex gap-2 overflow-hidden pb-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="w-44 shrink-0 md:w-48 lg:w-52">
-              <div className="flex flex-col gap-2 p-2">
-                <Skeleton className="aspect-square w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-              </div>
+              <ShelfCardSkeleton />
             </div>
           ))}
         </div>
@@ -980,39 +972,12 @@ function SearchSkeleton({
   variant?: "shelves" | "list";
 }) {
   if (variant === "list") {
-    return (
-      <div className="flex flex-col gap-1">
-        <Skeleton className="h-6 w-32" />
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-3 p-2">
-            <Skeleton className="size-10 shrink-0 rounded-sm" />
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Skeleton className="h-4 w-1/3" />
-              <Skeleton className="h-3 w-1/4" />
-            </div>
-            <Skeleton className="h-3 w-10 shrink-0" />
-          </div>
-        ))}
-      </div>
-    );
+    return <TrackRowSkeletonList count={8} />;
   }
   return (
     <div className="flex flex-col gap-8">
-      {Array.from({ length: 3 }).map((_, shelfIdx) => (
-        <section key={shelfIdx} className="flex flex-col gap-3">
-          <Skeleton className="h-6 w-48" />
-          <div className="flex gap-2 overflow-hidden">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="w-44 shrink-0 md:w-48 lg:w-52">
-                <div className="flex flex-col gap-2 p-2">
-                  <Skeleton className="aspect-square w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <ShelfSectionSkeleton key={i} titleWidth="w-48" />
       ))}
     </div>
   );

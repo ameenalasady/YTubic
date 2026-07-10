@@ -22,6 +22,7 @@ import { EntityHeader } from "@/components/shared/entity-header";
 import { TrackList } from "@/components/shared/track-list";
 import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -404,20 +405,22 @@ function SortMenu({
   );
 }
 
+// Mirrors the real hero + TrackList row geometry (see AlbumSkeleton's
+// comment for the reasoning). Playlists don't pass a `subtitle` to
+// EntityHeader (owner + track count are folded into one `metadata`
+// line, no separate artist row), so only one secondary bar follows
+// the title here, unlike Album's two.
 function PlaylistSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end">
-        <Skeleton className="aspect-square w-40 md:w-56" />
-        <div className="flex flex-col gap-2">
+      <div className="flex flex-row items-end gap-6">
+        <Skeleton className="size-40 shrink-0 border border-hairline shadow-lg" />
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
           <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-48" />
         </div>
       </div>
-      {Array.from({ length: 10 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
+      <TrackRowSkeletonList count={10} />
     </div>
   );
 }

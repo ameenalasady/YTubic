@@ -5,9 +5,12 @@ import { AlertCircleIcon, Loader2Icon, LogInIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ShelfCard } from "@/components/shared/shelf-card";
 import { TrackList } from "@/components/shared/track-list";
+import {
+  ShelfCardSkeleton,
+  TrackRowSkeletonList,
+} from "@/components/shared/skeletons";
 import {
   fetchLibraryAlbums,
   fetchLibraryArtists,
@@ -168,13 +171,7 @@ function LikedSongsView() {
   if (query.error && tracks.length === 0)
     return <ErrorCard message={query.error.message} />;
   if (query.isLoading) {
-    return (
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
-      </div>
-    );
+    return <TrackRowSkeletonList count={10} />;
   }
   if (tracks.length === 0) {
     return (
@@ -208,11 +205,7 @@ function SectionsSkeleton() {
   return (
     <div className="grid w-full gap-2 grid-cols-[repeat(auto-fill,minmax(min(100%,11rem),1fr))] [&>*]:max-w-[20rem]">
       {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-2 p-2">
-          <Skeleton className="aspect-square w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
-        </div>
+        <ShelfCardSkeleton key={i} />
       ))}
     </div>
   );
