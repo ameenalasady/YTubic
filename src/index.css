@@ -156,7 +156,16 @@
     -webkit-font-smoothing: antialiased;
   }
   body {
-    @apply overflow-hidden;
+    @apply overflow-hidden select-none;
+  }
+
+  /* The Settings dialog is the one place selection stays useful (e.g.
+     copying an API key) — re-enable it there. It's carved out by
+     attribute rather than as a descendant-selector exception because
+     Radix portals dialog content to `document.body`, a SIBLING of
+     `#root`, not a descendant of any app-shell wrapper. */
+  [data-settings-dialog] {
+    user-select: text;
   }
 
   /* Push the floating shadcn sidebar below the custom title bar so the

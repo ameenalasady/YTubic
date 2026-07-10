@@ -56,7 +56,7 @@ export function WindowResizeHandles() {
           key={dir}
           // Corners are 12px, edges 6px — corners come last in the DOM so
           // they paint on top and win the overlap.
-          className={`absolute z-50 ${className}`}
+          className={`absolute z-50 touch-none select-none ${className}`}
           onMouseDown={(e) => {
             // Primary button only; let the drag-region handle moves.
             if (e.button !== 0) return;

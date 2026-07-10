@@ -44,6 +44,7 @@ export function SettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
+        data-settings-dialog
         aria-describedby={undefined}
         showCloseButton={false}
         // Dim the app less than the default dialog (0.5 → 0.4) so more
