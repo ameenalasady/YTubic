@@ -34,8 +34,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import {
   Thumbnail,
-  pickHighResThumbnail,
-  resolveMaxCoverUrl,
+  getRenderedThumbnailSrc,
 } from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
@@ -433,6 +432,7 @@ export function PlayerBar({
   const [queueOpen, setQueueOpen] = useState(false);
   const iTunesCover = useITunesCover(track);
   const lyricsState = useLyricsView(track);
+  const coverRef = useRef<HTMLDivElement>(null);
   // The cover doubles as a drag handle for layout switching. In the
   // floating window the OS title bar already owns drag, so we don't
   // attach our own handler there.
@@ -440,14 +440,8 @@ export function PlayerBar({
     enabled: variant !== "floating",
     onClick: () => {
       if (!track) return;
-      const url = resolveMaxCoverUrl(track.thumbnails, iTunesCover);
-      if (url) {
-        openCoverLightbox(
-          url,
-          pickHighResThumbnail(track.thumbnails),
-          track.title,
-        );
-      }
+      const url = getRenderedThumbnailSrc(coverRef.current);
+      if (url) openCoverLightbox(url, track.title);
     },
   });
 
@@ -536,6 +530,7 @@ export function PlayerBar({
             an effective inner width of 320 anyway (22rem - p-4*2), so
             the cap is a no-op there. */}
         <div
+          ref={coverRef}
           onPointerDown={onCoverPointerDown}
           className={cn(
             "mx-auto w-full max-w-[20rem] touch-none select-none",

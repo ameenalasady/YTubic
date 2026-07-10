@@ -88,24 +88,31 @@ export function pickHighResThumbnail(
 }
 
 /**
- * Resolve the best available URL for a "maximize the cover" lightbox —
- * larger than anything `<Thumbnail>` itself requests, since this is
- * the one place the image is shown at (near) full size. Prefers an
- * external override (e.g. iTunes 3000×3000 art) exactly like
- * `<Thumbnail overrideHighRes>` does; otherwise takes the largest
- * API-shipped variant and asks for an even bigger rewrite via
- * `getHighResVariant`. Unlike `<Thumbnail>`, this doesn't go through
- * the disk-cache resolve step — a one-off lightbox load doesn't need
- * it, and the plain URL (upgraded or not) is a fine direct `<img src>`.
+ * For the "maximize the cover" lightbox: read back whichever `<img>`
+ * src a `<Thumbnail>` actually resolved to and is showing right now,
+ * straight from the DOM, rather than independently re-deriving a URL.
+ * `<Thumbnail>` already ran its own override → upgraded → fallback
+ * cascade and landed on something that loaded successfully — that's
+ * the definitive answer to "what's on screen", and re-deriving a
+ * fresh "best guess" separately (e.g. re-attempting a higher-res
+ * rewrite) risks landing on a *different*, unproven URL that can 404
+ * or resolve to the wrong image (a video's own YouTube-served
+ * thumbnail instead of the iTunes art actually visible) even though
+ * the on-screen image loaded fine.
+ *
+ * `container` should wrap the rendered `<Thumbnail>` (or be a ref to
+ * it directly). In the two-`<img>` cross-fade case (`showLayered`)
+ * the hi-res image is the one added second, so the last `<img>` in
+ * the container is always the right pick.
  */
-export function resolveMaxCoverUrl(
-  thumbnails: YtThumbnail[],
-  overrideHighRes?: string | null,
+export function getRenderedThumbnailSrc(
+  container: HTMLElement | null,
 ): string | null {
-  if (overrideHighRes) return overrideHighRes;
-  const largest = pickHighResThumbnail(thumbnails);
-  if (!largest) return null;
-  return getHighResVariant(largest, 1600) ?? largest;
+  if (!container) return null;
+  const imgs = container.querySelectorAll("img");
+  if (imgs.length === 0) return null;
+  const img = imgs[imgs.length - 1];
+  return img.currentSrc || img.src || null;
 }
 
 type Props = {

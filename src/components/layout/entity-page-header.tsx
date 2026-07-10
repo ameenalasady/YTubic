@@ -3,8 +3,7 @@ import { PlayIcon, ShuffleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Thumbnail,
-  pickHighResThumbnail,
-  resolveMaxCoverUrl,
+  getRenderedThumbnailSrc,
 } from "@/components/shared/thumbnail";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { cn } from "@/lib/utils";
@@ -156,6 +155,7 @@ const HeroLayout = memo(function HeroLayout({
   config: EntityHeaderConfig;
 }) {
   const hasButtons = !!(config.onPlay || config.onShuffle || config.actions);
+  const coverRef = useRef<HTMLButtonElement>(null);
   return (
     <div
       className={cn(
@@ -171,16 +171,11 @@ const HeroLayout = memo(function HeroLayout({
       )}
     >
       <button
+        ref={coverRef}
         type="button"
         onClick={() => {
-          const url = resolveMaxCoverUrl(config.thumbnails);
-          if (url) {
-            openCoverLightbox(
-              url,
-              pickHighResThumbnail(config.thumbnails),
-              config.title,
-            );
-          }
+          const url = getRenderedThumbnailSrc(coverRef.current);
+          if (url) openCoverLightbox(url, config.title);
         }}
         aria-label={`Enlarge cover for ${config.title}`}
         className={cn(

@@ -9,7 +9,7 @@ import {
   Loader2Icon,
   MicVocalIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Popover,
@@ -25,8 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Thumbnail,
-  pickHighResThumbnail,
-  resolveMaxCoverUrl,
+  getRenderedThumbnailSrc,
 } from "@/components/shared/thumbnail";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
@@ -85,17 +84,12 @@ export function PlayerBarBottom() {
   const [scrub, setScrub] = useState<number | null>(null);
   const iTunesCover = useITunesCover(track);
   const lyricsState = useLyricsView(track);
+  const coverRef = useRef<HTMLDivElement>(null);
   const { onPointerDown: onCoverPointerDown } = usePlayerCoverDrag({
     onClick: () => {
       if (!track) return;
-      const url = resolveMaxCoverUrl(track.thumbnails, iTunesCover);
-      if (url) {
-        openCoverLightbox(
-          url,
-          pickHighResThumbnail(track.thumbnails),
-          track.title,
-        );
-      }
+      const url = getRenderedThumbnailSrc(coverRef.current);
+      if (url) openCoverLightbox(url, track.title);
     },
   });
 
@@ -141,6 +135,7 @@ export function PlayerBarBottom() {
             instead of pushing the transport cluster off-center. */}
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div
+            ref={coverRef}
             onPointerDown={onCoverPointerDown}
             className="shrink-0 touch-none select-none cursor-grab active:cursor-grabbing"
           >
