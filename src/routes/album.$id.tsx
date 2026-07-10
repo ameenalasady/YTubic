@@ -59,7 +59,7 @@ function AlbumPageView() {
   ];
 
   const metadataParts = [
-    data.year,
+    data.releaseDate ?? data.year,
     data.trackCount ? `${data.trackCount} songs` : undefined,
     data.duration,
   ].filter(Boolean) as string[];

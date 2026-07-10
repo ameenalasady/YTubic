@@ -9,6 +9,13 @@ import {
   type YtNode,
 } from "./shared";
 
+// Matches a month-name date ("January 1, 2020", "Jan 1, 2020", "1
+// January 2020") in case a subtitle run ever carries a full release
+// date instead of just a bare year — no known InnerTube field for
+// this, so the header's own subtitle runs are the only place to look.
+const FULL_DATE_RE =
+  /^(?:[A-Z][a-z]{2,8}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Z][a-z]{2,8}\.?\s+\d{4})$/;
+
 function extractAlbumHeader(json: YtNode): YtNode {
   return (
     json?.header?.musicDetailHeaderRenderer ??
@@ -45,6 +52,7 @@ export async function fetchAlbum(id: string): Promise<AlbumPage> {
   ];
   const artists: MinimalArtist[] = [];
   let year: string | undefined;
+  let releaseDate: string | undefined;
   for (const run of subtitleRuns) {
     const browseId = run.navigationEndpoint?.browseEndpoint?.browseId as
       | string
@@ -54,8 +62,16 @@ export async function fetchAlbum(id: string): Promise<AlbumPage> {
       ?.browseEndpointContextMusicConfig?.pageType as string | undefined;
     if (browseId && pageType?.includes("ARTIST")) {
       artists.push({ id: browseId, name: run.text ?? "" });
-    } else if (/^\d{4}$/.test((run.text ?? "").trim())) {
-      year = run.text.trim();
+    } else {
+      const text = (run.text ?? "").trim();
+      if (/^\d{4}$/.test(text)) {
+        year = text;
+      } else if (FULL_DATE_RE.test(text)) {
+        // Most album subtitles only carry a bare year, but if YT ever
+        // sends a full date here (e.g. "January 1, 2020"), prefer it —
+        // same subtitle runs, just a more precise string.
+        releaseDate = text;
+      }
     }
   }
 
@@ -86,6 +102,7 @@ export async function fetchAlbum(id: string): Promise<AlbumPage> {
     title,
     artists,
     year,
+    releaseDate,
     trackCount,
     duration: durationMatch,
     thumbnails,

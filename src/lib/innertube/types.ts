@@ -86,6 +86,10 @@ export type AlbumPage = {
   title: string;
   artists: MinimalArtist[];
   year?: string;
+  /** Full release date (e.g. "January 1, 2020"), when the header's
+   *  subtitle carries one instead of just a bare year. Prefer this
+   *  over `year` for display when present. */
+  releaseDate?: string;
   trackCount?: number;
   duration?: string;
   thumbnails: Thumbnail[];
