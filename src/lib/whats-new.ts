@@ -40,6 +40,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   {
     version: "0.3.0",
     date: "July 2026",
+    image: "/whats-new/0.3.0.svg",
     sections: [
       {
         heading: "Discord Rich Presence",
