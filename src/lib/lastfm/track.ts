@@ -25,12 +25,15 @@ export function toLastfmTrack(m: LastfmTrackMeta): LastfmTrackName | null {
   // Prefer the structured artist list; fall back to the free-form subtitle
   // (YT sometimes only gives us that). No usable artist → bail rather than
   // send a channel/"views" string to Last.fm.
-  const artist = m.artists?.length
+  const rawArtist = m.artists?.length
     ? m.artists
         .map((a) => a.name)
         .filter(Boolean)
         .join(", ")
     : (m.subtitle?.trim() ?? "");
+  // Strip YouTube Music's " - Topic" suffix, which auto-generated artist
+  // channels carry and would otherwise pollute the scrobble / loved track.
+  const artist = rawArtist.replace(/\s*-\s*Topic$/i, "").trim();
   if (!artist) return null;
   return { artist, track: title, album: m.album?.trim() || undefined };
 }

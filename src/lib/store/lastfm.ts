@@ -11,6 +11,9 @@ type State = {
   sessionKey: string | null;
   /** Last.fm username for the linked session (for display). */
   username: string | null;
+  /** Profile avatar URL for the linked account (from user.getInfo), purely
+   *  cosmetic for the account card, or null if not fetched/unavailable. */
+  avatarUrl: string | null;
   /**
    * Master switch. A user can stay linked but pause scrobbling — nothing is
    * sent to Last.fm while this is false.
@@ -24,6 +27,7 @@ type State = {
 
   setCredentials: (apiKey: string, apiSecret: string) => void;
   setSession: (sessionKey: string, username: string) => void;
+  setAvatarUrl: (avatarUrl: string | null) => void;
   setScrobblingEnabled: (on: boolean) => void;
   setLoveSyncEnabled: (on: boolean) => void;
   /** Drop the linked session (keeps the API key/secret for easy re-linking). */
@@ -48,15 +52,18 @@ export const useLastfmStore = create<State>()(
       apiSecret: "",
       sessionKey: null,
       username: null,
+      avatarUrl: null,
       scrobblingEnabled: true,
       loveSyncEnabled: true,
 
       setCredentials: (apiKey, apiSecret) =>
         set({ apiKey: apiKey.trim(), apiSecret: apiSecret.trim() }),
-      setSession: (sessionKey, username) => set({ sessionKey, username }),
+      setSession: (sessionKey, username) =>
+        set({ sessionKey, username, avatarUrl: null }),
+      setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
       setScrobblingEnabled: (scrobblingEnabled) => set({ scrobblingEnabled }),
       setLoveSyncEnabled: (loveSyncEnabled) => set({ loveSyncEnabled }),
-      disconnect: () => set({ sessionKey: null, username: null }),
+      disconnect: () => set({ sessionKey: null, username: null, avatarUrl: null }),
     }),
     { name: "ytm-lastfm" },
   ),

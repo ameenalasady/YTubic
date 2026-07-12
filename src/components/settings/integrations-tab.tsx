@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ActivityIcon,
@@ -28,9 +28,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
 import { useLastfmStore, isLastfmLinked } from "@/lib/store/lastfm";
-import { authorizeUrl, getSession, getToken } from "@/lib/lastfm/api";
+import {
+  authorizeUrl,
+  getSession,
+  getToken,
+  getUserInfo,
+} from "@/lib/lastfm/api";
 import { useDiscordStore, isDiscordConfigured } from "@/lib/store/discord";
 
 type IntegrationId = "lastfm" | "discord";
@@ -126,15 +132,24 @@ function IntegrationListRow({
 }
 
 function LastfmStatusBadge() {
-  const { apiKey, apiSecret, sessionKey, username } = useLastfmStore();
+  const { apiKey, apiSecret, sessionKey, username, avatarUrl } =
+    useLastfmStore();
   const linked = isLastfmLinked({ apiKey, apiSecret, sessionKey });
   return linked ? (
-    <Badge
-      variant="secondary"
-      className="bg-rose-500/15 text-rose-600 dark:text-rose-400"
-    >
-      {username ? `@${username}` : "Connected"}
-    </Badge>
+    <div className="flex items-center gap-1.5">
+      {avatarUrl ? (
+        <Avatar size="sm">
+          <AvatarImage src={avatarUrl} alt="" />
+          <AvatarFallback>{username?.[0]?.toUpperCase()}</AvatarFallback>
+        </Avatar>
+      ) : null}
+      <Badge
+        variant="secondary"
+        className="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+      >
+        {username ? `@${username}` : "Connected"}
+      </Badge>
+    </div>
   ) : (
     <Badge variant="outline">Not connected</Badge>
   );
@@ -170,10 +185,12 @@ function LastfmGroup() {
     apiSecret,
     sessionKey,
     username,
+    avatarUrl,
     scrobblingEnabled,
     loveSyncEnabled,
     setCredentials,
     setSession,
+    setAvatarUrl,
     setScrobblingEnabled,
     setLoveSyncEnabled,
     disconnect,
@@ -185,6 +202,16 @@ function LastfmGroup() {
   const [connecting, setConnecting] = useState(false);
   // Lets the user abort the browser-authorization polling loop.
   const cancelledRef = useRef(false);
+
+  // Best-effort avatar fetch: on connect, and lazily for an already-linked
+  // account that doesn't have one cached yet (e.g. it linked before this
+  // feature existed). Purely cosmetic — failures are silent.
+  useEffect(() => {
+    if (!linked || !username || avatarUrl) return;
+    void getUserInfo({ apiKey, apiSecret }, username)
+      .then((info) => setAvatarUrl(info.avatarUrl))
+      .catch(() => {});
+  }, [linked, username, avatarUrl, apiKey, apiSecret, setAvatarUrl]);
 
   const connect = async () => {
     const key = keyInput.trim();
@@ -250,6 +277,14 @@ function LastfmGroup() {
         control={
           linked ? (
             <div className="flex shrink-0 items-center gap-2">
+              {avatarUrl ? (
+                <Avatar size="sm">
+                  <AvatarImage src={avatarUrl} alt="" />
+                  <AvatarFallback>
+                    {username?.[0]?.toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              ) : null}
               <Badge
                 variant="secondary"
                 className="bg-rose-500/15 text-rose-600 dark:text-rose-400"

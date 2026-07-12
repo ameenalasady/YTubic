@@ -125,6 +125,26 @@ export async function getSession(
   return { key: json.session.key, name: json.session.name };
 }
 
+type LastfmImage = { size?: string; "#text"?: string };
+
+/** Public profile info for the connected account — just enough for the
+ *  Settings card's avatar. Unsigned, unauthenticated GET. */
+export async function getUserInfo(
+  creds: LastfmCreds,
+  username: string,
+): Promise<{ name: string; avatarUrl: string | null }> {
+  const json = await request<{
+    user?: { name?: string; image?: LastfmImage[] };
+  }>({ method: "user.getInfo", api_key: creds.apiKey, user: username });
+  const images = json.user?.image ?? [];
+  const avatarUrl =
+    images.find((i) => i.size === "extralarge")?.["#text"] ??
+    images.find((i) => i.size === "large")?.["#text"] ??
+    images[images.length - 1]?.["#text"] ??
+    null;
+  return { name: json.user?.name ?? username, avatarUrl: avatarUrl || null };
+}
+
 function trackParams(t: LastfmScrobbleTrack): Record<string, string> {
   const p: Record<string, string> = { artist: t.artist, track: t.track };
   if (t.album) p.album = t.album;

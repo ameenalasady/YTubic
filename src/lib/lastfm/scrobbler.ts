@@ -5,6 +5,7 @@ import {
   updateNowPlaying,
   type LastfmScrobbleTrack,
 } from "@/lib/lastfm/api";
+import { enqueue, flushQueue, isTransient } from "@/lib/lastfm/queue";
 import { toLastfmTrack } from "@/lib/lastfm/track";
 import { getLastfmSession, useLastfmStore } from "@/lib/store/lastfm";
 import { usePlaybackStore, type QueueTrack } from "@/lib/store/playback";
@@ -66,7 +67,9 @@ function sendNowPlaying(): void {
   );
 }
 
-/** Scrobble the current track with the given start timestamp. */
+/** Scrobble the current track with the given start timestamp. Failures that
+ *  look transient (offline, Last.fm hiccup) are queued for retry rather than
+ *  dropped. */
 function sendScrobble(timestamp: number): void {
   const session = getLastfmSession();
   if (!session) return;
@@ -75,9 +78,18 @@ function sendScrobble(timestamp: number): void {
   if (!t) return;
   const st = toScrobbleTrack(t, s.duration);
   if (!st) return;
-  void scrobble(session.creds, session.sessionKey, st, timestamp).catch((e) =>
-    logDev("scrobble failed", e),
-  );
+  scrobble(session.creds, session.sessionKey, st, timestamp)
+    .then(() => {
+      // A successful send means we're online again — drain anything
+      // stranded from earlier.
+      void flushQueue(session.creds, session.sessionKey);
+    })
+    .catch((e) => {
+      logDev("scrobble failed", e);
+      if (isTransient(e)) {
+        enqueue({ ...st, timestamp, sessionKey: session.sessionKey });
+      }
+    });
 }
 
 export function useLastfmScrobbler(): void {
@@ -94,6 +106,15 @@ export function useLastfmScrobbler(): void {
     })),
   );
   const playing = usePlaybackStore((s) => s.playing);
+
+  // Retry anything stranded offline from a previous session, once linking
+  // (re)activates.
+  useEffect(() => {
+    if (!active) return;
+    const session = getLastfmSession();
+    if (!session) return;
+    void flushQueue(session.creds, session.sessionKey);
+  }, [active]);
 
   const sessionRef = useRef<Session>({
     videoId: undefined,
