@@ -24,7 +24,7 @@ export function AlbumLink({ albumId, name, className }: Props) {
   }
 
   const cls = cn(
-    "cursor-pointer transition-colors hover:text-foreground hover:underline",
+    "cursor-pointer text-left transition-colors hover:text-foreground hover:underline",
     className,
   );
 
