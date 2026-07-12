@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckIcon, MicVocalIcon } from "lucide-react";
+import { MicVocalIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -135,13 +136,7 @@ export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
 
 export function LyricsBody({ state }: { state: LyricsViewState }) {
   if (!state.hasTrack) return null;
-  if (!state.enabled) {
-    return (
-      <p className="px-4 py-2 text-sm text-muted-foreground">
-        Lyrics are turned off.
-      </p>
-    );
-  }
+  if (!state.enabled) return null;
   if (state.isLoading && !state.active) {
     return (
       <p className="px-4 py-2 text-sm text-muted-foreground">
@@ -406,46 +401,50 @@ export function LyricsSourceButton({
           Show lyrics
         </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Lyrics source</DropdownMenuLabel>
-        <DropdownMenuItem
-          disabled={!enabled}
-          onSelect={() => setPref("auto")}
+        {/* `inset` lines the label up with the `pl-8` the checkbox item
+            above and the radio items below all reserve for their
+            indicator, so every row in this menu starts its text at the
+            same left edge instead of three different ones. */}
+        <DropdownMenuLabel inset>Lyrics source</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={pref}
+          onValueChange={(v) => setPref(v as Pref)}
         >
-          <span className="flex-1">
-            Auto
-            {best ? (
-              <span className="ml-1 text-xs text-muted-foreground">
-                ({SOURCE_LABELS[best]})
-              </span>
-            ) : null}
-          </span>
-          {pref === "auto" ? <CheckIcon className="size-4" /> : null}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {SOURCE_ORDER.map((s) => {
-          const a = availability[s];
-          const dot =
-            a === "lrc"
-              ? "bg-brand"
-              : a === "plain"
-                ? "bg-muted-foreground/60"
-                : a === "loading"
-                  ? "bg-muted-foreground/30 animate-pulse"
-                  : "bg-transparent";
-          return (
-            <DropdownMenuItem
-              key={s}
-              onSelect={() => setPref(s)}
-              disabled={!enabled || a === "none"}
-            >
-              <span
-                className={cn("mr-2 size-1.5 shrink-0 rounded-full", dot)}
-              />
-              <span className="flex-1">{SOURCE_LABELS[s]}</span>
-              {pref === s ? <CheckIcon className="size-4" /> : null}
-            </DropdownMenuItem>
-          );
-        })}
+          <DropdownMenuRadioItem value="auto" disabled={!enabled}>
+            <span className="flex-1">
+              Auto
+              {best ? (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({SOURCE_LABELS[best]})
+                </span>
+              ) : null}
+            </span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuSeparator />
+          {SOURCE_ORDER.map((s) => {
+            const a = availability[s];
+            const dot =
+              a === "lrc"
+                ? "bg-brand"
+                : a === "plain"
+                  ? "bg-muted-foreground/60"
+                  : a === "loading"
+                    ? "bg-muted-foreground/30 animate-pulse"
+                    : "bg-transparent";
+            return (
+              <DropdownMenuRadioItem
+                key={s}
+                value={s}
+                disabled={!enabled || a === "none"}
+              >
+                <span className="flex-1">{SOURCE_LABELS[s]}</span>
+                <span
+                  className={cn("ml-2 size-1.5 shrink-0 rounded-full", dot)}
+                />
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
