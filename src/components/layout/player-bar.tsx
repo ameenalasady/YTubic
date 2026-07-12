@@ -11,8 +11,6 @@ import {
   Volume2Icon,
   VolumeXIcon,
   Loader2Icon,
-  MusicIcon,
-  VideoIcon,
 } from "lucide-react";
 import { QueueBody, QueueToggleButton } from "@/components/layout/queue-panel";
 import {
@@ -22,7 +20,6 @@ import {
 } from "@/components/layout/lyrics-view";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,11 +42,6 @@ import { usePlayerCoverDrag } from "@/lib/player-drag";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { usePanelsStore } from "@/lib/store/panels";
-import {
-  useTrackSourceStore,
-  type SourceKind,
-} from "@/lib/store/track-source";
-import { findAlternateVideoId } from "@/lib/innertube/alternate-source";
 import { lookupITunesCover, cacheCoverToDisk } from "@/lib/cover-art";
 import type { QueueTrack, RepeatMode } from "@/lib/store/playback";
 
@@ -104,103 +96,6 @@ export function repeatLabel(repeat: RepeatMode): string {
     : repeat === "all"
       ? "Repeat all"
       : "Repeat off";
-}
-
-/**
- * Segmented song/video toggle. Displayed as two tightly grouped icons —
- * the active one filled, the other ghosted — matching the layout
- * reference. Clicking either side switches to that source; if the
- * alternate videoId hasn't been resolved yet, we fetch it on demand.
- */
-export function SourceToggle({ track }: { track: QueueTrack }) {
-  const record = useTrackSourceStore((s) => s.byVideoId[track.videoId]);
-  const setSelected = useTrackSourceStore((s) => s.setSelected);
-  const setAlternate = useTrackSourceStore((s) => s.setAlternate);
-  const [busy, setBusy] = useState<SourceKind | null>(null);
-
-  const selected: SourceKind = record?.selected ?? "song";
-
-  const switchTo = async (target: SourceKind) => {
-    if (busy || target === selected) return;
-    const cachedAlt = target === "video" ? record?.video : record?.song;
-    if (cachedAlt) {
-      setSelected(track.videoId, target);
-      return;
-    }
-    setBusy(target);
-    try {
-      const artistsLine = track.artists?.map((a) => a.name).join(" ") ?? "";
-      const query = `${track.title} ${artistsLine}`.trim();
-      const altId = await findAlternateVideoId(query, track.videoId, target);
-      if (!altId) {
-        toast.error(
-          target === "video"
-            ? "No video version found"
-            : "No song version found",
-        );
-        return;
-      }
-      setAlternate(track.videoId, target, altId);
-      setSelected(track.videoId, target);
-    } catch (e) {
-      toast.error(`Couldn't switch source: ${(e as Error).message}`);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <div className="flex items-center rounded-md border bg-muted/40 p-0.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label="Song version"
-            aria-pressed={selected === "song"}
-            onClick={() => switchTo("song")}
-            disabled={busy !== null}
-            className={cn(
-              "flex size-7 items-center justify-center rounded-sm transition-colors",
-              selected === "song"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-white/10 hover:text-foreground",
-            )}
-          >
-            {busy === "song" ? (
-              <Loader2Icon className="size-4 animate-spin" />
-            ) : (
-              <MusicIcon className="size-4" />
-            )}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>Song version</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label="Video version"
-            aria-pressed={selected === "video"}
-            onClick={() => switchTo("video")}
-            disabled={busy !== null}
-            className={cn(
-              "flex size-7 items-center justify-center rounded-sm transition-colors",
-              selected === "video"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-white/10 hover:text-foreground",
-            )}
-          >
-            {busy === "video" ? (
-              <Loader2Icon className="size-4 animate-spin" />
-            ) : (
-              <VideoIcon className="size-4" />
-            )}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>Video version</TooltipContent>
-      </Tooltip>
-    </div>
-  );
 }
 
 export function ProgressSlider({
@@ -314,12 +209,23 @@ export function VolumeControl({
 
   return (
     <div
-      // Two invisible 8px strips (above and below the speaker button)
-      // extend the container's hover hit-zone without overlapping the
-      // button itself — overlapping it would steal its `:hover` state.
-      // Together with the popup's own padding, the cursor gets a
-      // comfortable grace area for traveling between icon and slider.
-      className="relative flex items-center before:absolute before:-top-2 before:inset-x-0 before:h-2 before:content-[''] after:absolute after:-bottom-2 after:inset-x-0 after:h-2 after:content-['']"
+      className={cn(
+        "relative flex items-center",
+        // Horizontal (side card): the slider is always visible and grows
+        // to fill whatever row space the resizable card gives it, so it
+        // scales with the card instead of overflowing a fixed width.
+        // Vertical (bottom bar) keeps the hover-popup layout below, so it
+        // doesn't need the grow/min-w-0 treatment.
+        direction === "horizontal" && "min-w-0 flex-1 gap-1",
+        // Two invisible 8px strips (above and below the speaker button)
+        // extend the container's hover hit-zone without overlapping the
+        // button itself — overlapping it would steal its `:hover` state.
+        // Together with the popup's own padding, the cursor gets a
+        // comfortable grace area for traveling between icon and slider.
+        // Only the vertical popup needs this grace zone.
+        direction === "vertical" &&
+          "before:absolute before:-top-2 before:inset-x-0 before:h-2 before:content-[''] after:absolute after:-bottom-2 after:inset-x-0 after:h-2 after:content-['']",
+      )}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       onWheel={(e) => {
@@ -339,6 +245,7 @@ export function VolumeControl({
         size="icon"
         aria-label={muted ? "Unmute" : "Mute"}
         onClick={toggleMute}
+        className="shrink-0"
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -353,13 +260,13 @@ export function VolumeControl({
           </motion.span>
         </AnimatePresence>
       </Button>
-      <div
-        className={cn(
-          popupClass,
-          open ? "opacity-100" : "pointer-events-none opacity-0",
-        )}
-      >
-        {direction === "vertical" ? (
+      {direction === "vertical" ? (
+        <div
+          className={cn(
+            popupClass,
+            open ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+        >
           <div className="flex w-12 flex-col items-center gap-2 rounded-md border border-hairline bg-surface-active/70 px-4 py-3 shadow backdrop-blur-md">
             <span className="text-xs font-medium tabular-nums text-foreground">
               {pct}
@@ -374,22 +281,24 @@ export function VolumeControl({
               onValueChange={([v]) => setVolume(v / 100)}
             />
           </div>
-        ) : (
-          <>
-            <Slider
-              value={[pct]}
-              max={100}
-              step={1}
-              className="w-16 [&_[data-slot=slider-track]]:bg-white/20"
-              aria-label="Volume"
-              onValueChange={([v]) => setVolume(v / 100)}
-            />
-            <span className="w-7 text-right text-xs font-medium tabular-nums text-foreground">
-              {pct}
-            </span>
-          </>
-        )}
-      </div>
+        </div>
+      ) : (
+        // Inline, not a popup: grows to fill the row so its width tracks
+        // the resizable side card instead of a fixed size overflowing it.
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Slider
+            value={[pct]}
+            max={100}
+            step={1}
+            className="min-w-0 flex-1 [&_[data-slot=slider-track]]:bg-white/20"
+            aria-label="Volume"
+            onValueChange={([v]) => setVolume(v / 100)}
+          />
+          <span className="w-7 shrink-0 text-right text-xs font-medium tabular-nums text-foreground">
+            {pct}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -674,14 +583,19 @@ export function PlayerBar({
         )}
       </AnimatePresence>
 
-      {/* Bottom row: lyrics-source + queue + volume on the left,
-          song/video toggle + more menu on the right. `PlayerMoreMenu`
+      {/* Bottom row: lyrics-source + queue + volume on the left, more
+          menu on the right. The volume slider grows to fill the left
+          cluster so it scales with the resizable card instead of
+          overflowing into the menu button. The song/video source
+          picker lives inside `PlayerMoreMenu` now (its default
+          `includeSource`) rather than as its own control here, which
+          is what used to crowd the volume slider. `PlayerMoreMenu`
           handles the floating-window case internally — its
           `onGoToArtist` callback emits a Tauri nav event there
           instead of calling `useNavigate` (which would throw without
           a router). */}
-      <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-3">
-        <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-2 px-3 pt-2 pb-3">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5">
           <LyricsSourceButton state={lyricsState} />
           <QueueToggleButton
             open={queueOpen}
@@ -689,10 +603,7 @@ export function PlayerBar({
           />
           <VolumeControl />
         </div>
-        <div className="flex items-center gap-1">
-          {track && <SourceToggle track={track} />}
-          <PlayerMoreMenu track={track} includeSource={false} />
-        </div>
+        <PlayerMoreMenu track={track} />
       </div>
     </aside>
     </TooltipProvider>

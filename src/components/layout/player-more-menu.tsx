@@ -43,9 +43,10 @@ type Props = {
   track: QueueTrack | undefined;
   /**
    * When `true` (default), the menu prepends a Song/Video radio
-   * group. The right-card layout already has a segmented source
-   * toggle inline so it passes `false` to avoid duplicating it; the
-   * bottom bar has no inline toggle and relies on this menu for it.
+   * group. Every player surface relies on this menu for the source
+   * picker — the right card used to have its own inline segmented
+   * toggle, but that overflowed the resizable card's volume slider,
+   * so it moved in here.
    */
   includeSource?: boolean;
   align?: "start" | "end";
