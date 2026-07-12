@@ -4,12 +4,31 @@ import { useEffect, useMemo, useRef } from "react";
 import { fetchHomeFeedPage } from "@/lib/innertube/home";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { ShelfSectionSkeleton } from "@/components/shared/skeletons";
+import { useHomeSectionsStore } from "@/lib/store/home-sections";
+import type { Shelf } from "@/lib/innertube/types";
 import { AlertCircleIcon, Loader2Icon, RefreshCwIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 });
+
+/**
+ * Stable-sort shelves by the user's saved title order (see
+ * `lib/store/home-sections.ts`). Titles not in `order` (a section
+ * that's new or has rotated in since the order was saved) rank last,
+ * in their original API position. `(a.rank - b.rank) || (a.i - b.i)`
+ * relies on `NaN` being falsy in JS — when both ranks are `Infinity`,
+ * `Infinity - Infinity` is `NaN`, and `||` falls through to the index
+ * tiebreak instead of leaving the comparator result undefined.
+ */
+function sortShelvesByOrder(shelves: Shelf[], order: string[]): Shelf[] {
+  const rank = new Map(order.map((title, i) => [title, i]));
+  return shelves
+    .map((shelf, i) => ({ shelf, i, rank: rank.get(shelf.title) ?? Infinity }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((x) => x.shelf);
+}
 
 function HomePage() {
   const {
@@ -33,6 +52,25 @@ function HomePage() {
     [data?.pages],
   );
 
+  const order = useHomeSectionsStore((s) => s.order);
+  const customized = useHomeSectionsStore((s) => s.customized);
+  const registerSections = useHomeSectionsStore((s) => s.register);
+
+  // Learn any titles we haven't seen before (new or rotated-in
+  // sections) so they show up in the settings reorder list, whether or
+  // not the user has customized the order yet. A no-op set() when
+  // every title's already known, so this costs nothing on the common
+  // path.
+  useEffect(() => {
+    if (shelves.length === 0) return;
+    registerSections(shelves.map((s) => s.title));
+  }, [shelves, registerSections]);
+
+  const displayShelves = useMemo(
+    () => (customized ? sortShelvesByOrder(shelves, order) : shelves),
+    [shelves, order, customized],
+  );
+
   // Manual refresh: pull a fresh home feed (recommendations rotate on
   // YT's side) and jump back to the top so the user lands on the new
   // top shelves. `refetch` re-runs every loaded page, so the whole feed
@@ -46,12 +84,31 @@ function HomePage() {
     void refetch();
   };
 
+  // With a custom order applied, fetch every page up front instead of
+  // waiting on scroll — a section the user ranked first might live on
+  // a later API page, and we want it to actually render first rather
+  // than popping to the top once its page finally loads. `error` stops
+  // the chain after a failed continuation, matching the sentinel's
+  // own guard below.
+  useEffect(() => {
+    if (!customized || !hasNextPage || isFetchingNextPage || error) return;
+    fetchNextPage();
+  }, [customized, hasNextPage, isFetchingNextPage, error, fetchNextPage]);
+
+  // True while a custom order still has unfetched pages left to apply —
+  // the shelf list stays hidden behind the skeleton during this phase
+  // so sections don't visibly reflow into their final order.
+  const eagerLoadPending = customized && !!hasNextPage && !error;
+
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = sentinelRef.current;
     // `error` guard: stop auto-loading after a failed continuation so the
     // still-visible sentinel doesn't re-fire fetchNextPage in a loop.
-    if (!node || !hasNextPage || isFetchingNextPage || error) return;
+    // Skipped entirely once a custom order is active — the effect above
+    // already drives page-fetching in that mode.
+    if (!node || customized || !hasNextPage || isFetchingNextPage || error)
+      return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) fetchNextPage();
@@ -60,7 +117,7 @@ function HomePage() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, error]);
+  }, [customized, hasNextPage, isFetchingNextPage, fetchNextPage, error]);
 
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
@@ -99,13 +156,15 @@ function HomePage() {
         </div>
       ) : null}
 
-      {isLoading ? <HomeSkeleton /> : null}
+      {isLoading || eagerLoadPending ? <HomeSkeleton /> : null}
 
-      {shelves.map((shelf) => (
-        <ShelfCarousel key={shelf.id} shelf={shelf} />
-      ))}
+      {!isLoading && !eagerLoadPending
+        ? displayShelves.map((shelf) => (
+            <ShelfCarousel key={shelf.id} shelf={shelf} />
+          ))
+        : null}
 
-      {hasNextPage ? (
+      {hasNextPage && !customized ? (
         <div
           ref={sentinelRef}
           className="flex h-16 items-center justify-center text-muted-foreground"
