@@ -346,6 +346,14 @@ fn account_cookies_path(app: &tauri::AppHandle, id: &str) -> PathBuf {
     accounts_dir(app).join(id).join("cookies.enc")
 }
 
+/// WebView2 browser args for windows on the DEFAULT user-data folder — the
+/// main window and the floating player. Must stay byte-identical to
+/// `additionalBrowserArgs` in `tauri.conf.json`: WebView2 refuses to create
+/// a second webview on the same user-data folder with different args, so a
+/// mismatch makes `open_player_window` fail and the floating player never
+/// appears.
+const APP_WEBVIEW_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService";
+
 /// Legacy single-account path — kept only for migration. New code
 /// should resolve cookies via `active_cookies_path`.
 fn legacy_cookies_enc_path(app: &tauri::AppHandle) -> PathBuf {
@@ -1246,6 +1254,9 @@ async fn open_player_window(
     // handler entirely is purely upside. The doc string for this
     // method literally calls out HTML5 DnD on Windows as the use case.
     .disable_drag_drop_handler()
+    // Shares the default user-data folder with the main window, so the
+    // args must match the main window's `additionalBrowserArgs` exactly.
+    .additional_browser_args(APP_WEBVIEW_ARGS)
     .build()
     .map_err(|e| e.to_string())?;
     // Dev builds: orange taskbar icon, same as the main window.
