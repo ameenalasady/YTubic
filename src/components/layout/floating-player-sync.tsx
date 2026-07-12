@@ -1,10 +1,7 @@
 import { useEffect } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { usePlaybackStore } from "@/lib/store/playback";
 import { useTrackSourceStore, type SourceKind } from "@/lib/store/track-source";
-import { detectZone, usePlayerDragStore } from "@/lib/player-drag";
 import type { PlaybackState } from "@/lib/store/playback";
 
 /**
@@ -277,164 +274,6 @@ export function FloatingPlayerSync() {
     };
   }, []);
 
-  // While the user is dragging the floating window via its OS title
-  // bar, mirror its virtual-cursor stream into the same drag store
-  // that the in-window cover drag uses. The existing
-  // `<DragSnapOverlay>` then lights up the right/bottom snap zones
-  // in real time as the floating window approaches them, giving
-  // consistent visual feedback for both kinds of drag.
-  useEffect(() => {
-    let cancelled = false;
-    const unlistens: Array<() => void> = [];
-    const register = (p: Promise<() => void>) => {
-      void p.then((un) => {
-        if (cancelled) un();
-        else unlistens.push(un);
-      });
-    };
-
-    register(
-      listen<{ x: number; y: number }>("drag:floating-position", (e) => {
-        const { x, y } = e.payload;
-        const drag = usePlayerDragStore.getState();
-        if (!drag.active) drag.setActive(true);
-        drag.setCursor({ x, y });
-        drag.setZone(detectZone(x, y));
-      }),
-    );
-
-    register(
-      listen("drag:floating-end", () => {
-        const drag = usePlayerDragStore.getState();
-        drag.setActive(false);
-        drag.setZone(null);
-        drag.setCursor(null);
-      }),
-    );
-
-    return () => {
-      cancelled = true;
-      for (const un of unlistens) un();
-      // Defensive: if the watcher is unmounting mid-drag (e.g. the
-      // user closed the floating window), reset the overlay so it
-      // doesn't get stuck visible on the main window.
-      const drag = usePlayerDragStore.getState();
-      if (drag.active) {
-        drag.setActive(false);
-        drag.setZone(null);
-        drag.setCursor(null);
-      }
-    };
-  }, []);
-
-  return null;
-}
-
-/**
- * Floating-window-side: when the user drags the standalone window
- * back over the main window, auto-close it so the layout reverts to
- * "right" mode (handled by `app-shell.tsx`'s `player-window-closed`
- * listener).
- *
- * Implemented as a debounced poll on `onMoved`: while the OS drag is
- * happening events fire continuously; we only act ~300 ms after the
- * last event so brief crossings don't accidentally dock.
- *
- * "Inside" = the floating window's center point falls within the
- * main window's outer rectangle. Coords come back in physical pixels
- * but both windows report in the same unit, so no DPR conversion is
- * needed for the comparison.
- */
-function FloatingDockWatcher() {
-  useEffect(() => {
-    const me = getCurrentWindow();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    /**
-     * Compute the floating window's center expressed in the main
-     * window's local CSS-pixel coordinate space. That doubles as the
-     * "virtual cursor" position the main side uses to drive its
-     * `DragSnapOverlay` — so users get the same red snap-zone glow
-     * whether they're dragging the cover thumbnail or the whole
-     * floating window.
-     */
-    const computeVirtualCursor = async () => {
-      try {
-        const myPos = await me.outerPosition();
-        const mySize = await me.outerSize();
-        const main = await Window.getByLabel("main");
-        if (!main) return null;
-        // Don't dock against a main window that's hidden to the tray — its
-        // outerPosition/outerSize still report the last on-screen rect, so
-        // dragging the floater over that empty area would wrongly close it
-        // and leave audio playing with no visible player.
-        if (!(await main.isVisible())) return null;
-        const mainPos = await main.outerPosition();
-        const mainSize = await main.outerSize();
-        // Coords come back in physical pixels; main's `window.innerWidth`
-        // (which `detectZone` reads) is logical, so we divide through
-        // by the main window's scale factor.
-        const factor = await main.scaleFactor();
-
-        const cx = myPos.x + mySize.width / 2;
-        const cy = myPos.y + mySize.height / 2;
-        const localX = (cx - mainPos.x) / factor;
-        const localY = (cy - mainPos.y) / factor;
-        const mainW = mainSize.width / factor;
-        const mainH = mainSize.height / factor;
-        const inside =
-          localX >= 0 && localX <= mainW && localY >= 0 && localY <= mainH;
-
-        return { x: localX, y: localY, inside };
-      } catch (e) {
-        console.error("[floating] cursor compute failed:", e);
-        return null;
-      }
-    };
-
-    const checkDock = async () => {
-      const v = await computeVirtualCursor();
-      if (v?.inside) {
-        await invoke("close_player_window").catch(() => {
-          /* fine — could already be closed */
-        });
-      }
-    };
-
-    void me
-      .onMoved(async () => {
-        const v = await computeVirtualCursor();
-        if (v) {
-          // Stream the virtual cursor to the main window so its
-          // `DragSnapOverlay` can light up the snap zones in real
-          // time. We send raw coords (not the zone) — main runs
-          // `detectZone` itself against its own `window.innerWidth`.
-          void emit("drag:floating-position", { x: v.x, y: v.y });
-        }
-
-        if (timer !== undefined) clearTimeout(timer);
-        timer = setTimeout(async () => {
-          // 300 ms with no further movement counts as "drop". Run the
-          // dock check first (might close the window, which makes the
-          // end-event ride along to a zombie listener — harmless),
-          // then tell main to clear the overlay.
-          await checkDock();
-          void emit("drag:floating-end", {});
-        }, 300);
-      })
-      .then((un) => {
-        if (cancelled) un();
-        else unlisten = un;
-      });
-
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-      unlisten?.();
-    };
-  }, []);
   return null;
 }
 
@@ -486,5 +325,5 @@ export function FloatingPlayerSyncReceiver() {
     };
   }, []);
 
-  return <FloatingDockWatcher />;
+  return null;
 }
