@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { safeLocalStorage } from "./safe-storage";
+import { safeIdbStorage, dropLegacyLocalStorageKey } from "./idb-storage";
 
 export type TrackMeta = {
   title: string;
@@ -9,10 +9,12 @@ export type TrackMeta = {
   artists?: { id?: string; name: string }[];
 };
 
-// Soft cap so the map can't outgrow the localStorage quota it shares with
-// the query cache and other stores. Cache tops out in the low thousands of
-// tracks even at the largest storage limit, so this comfortably covers a
-// full cache with headroom. Oldest insertions are evicted first.
+// Soft cap so the map can't grow unboundedly. Cache tops out in the low
+// thousands of tracks even at the largest storage limit, so this
+// comfortably covers a full cache with headroom. Oldest insertions are
+// evicted first. (No longer sized against a shared localStorage quota —
+// this store now persists to IndexedDB — but a cap is still worth keeping
+// so a very long-lived install doesn't grow this without bound.)
 const MAX_ENTRIES = 5000;
 
 type State = {
@@ -57,10 +59,14 @@ export const useTrackMetaStore = create<State>()(
     }),
     {
       name: "ytm-track-meta",
-      storage: createJSONStorage(() => safeLocalStorage),
+      storage: createJSONStorage(() => safeIdbStorage),
     },
   ),
 );
+
+// One-time migration: this store used to persist to localStorage under the
+// same name. Drop the stale blob so its quota is actually reclaimed.
+dropLegacyLocalStorageKey("ytm-track-meta");
 
 /** Record a played track's metadata. Cheap, idempotent, safe to call on
  *  every track change. */

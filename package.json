@@ -16,7 +16,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@tanstack/query-sync-storage-persister": "^5.99.2",
+    "@tanstack/query-async-storage-persister": "^5.101.2",
     "@tanstack/react-query": "^5.99.2",
     "@tanstack/react-query-persist-client": "^5.99.2",
     "@tanstack/react-router": "^1.168.23",
@@ -31,6 +31,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "idb-keyval": "^6.3.0",
     "lucide-react": "^1.8.0",
     "motion": "^12.38.0",
     "next-themes": "^0.4.6",

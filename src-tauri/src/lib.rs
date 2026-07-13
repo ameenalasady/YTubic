@@ -1791,6 +1791,22 @@ async fn pick_cache_folder(app: tauri::AppHandle) -> Option<String> {
 /// or drop to unlimited from Settings.
 const DEFAULT_CACHE_LIMIT_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 
+/// Extensions `enforce_cache_limit` treats as belonging to the audio
+/// stream cache.
+const AUDIO_CACHE_EXTENSIONS: &[&str] = &[".webm"];
+
+/// Fixed size cap for the cover-image disk cache (`cover_cache_dir`).
+/// Unlike the audio cache this isn't user-configurable from Settings —
+/// covers are small (roughly 1-3 MB each for the upgraded hi-res iTunes
+/// art) and the point is just to stop unbounded growth, not to let users
+/// trade off disk for cache depth the way they do for tracks. ~512 MiB
+/// comfortably covers many hundreds of distinct covers.
+const DEFAULT_COVER_CACHE_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Extensions `enforce_cache_limit` treats as belonging to the cover
+/// cache — matches every extension `url_to_filename` can produce.
+const COVER_CACHE_EXTENSIONS: &[&str] = &[".jpg", ".png", ".webp"];
+
 /// Where the persisted cache-size limit lives (plain integer bytes,
 /// `0` = unlimited). Kept next to the accounts data in app-data so it
 /// survives cache clears.
@@ -1823,14 +1839,19 @@ async fn write_cache_limit(app: &tauri::AppHandle, bytes: u64) -> Result<(), Str
         .map_err(|e| format!("write cache-limit: {e}"))
 }
 
-/// Evict oldest tracks (by mtime) from `dir` until its total `.webm`
-/// size is at or under `limit`. `limit == 0` means unlimited (no-op).
-/// Only finalized `.webm` files count and are eligible for eviction —
-/// in-flight `.part` downloads are left alone. Deleting a file that's
-/// currently being served is safe: on Unix the open handle keeps the
-/// bytes readable until the stream finishes, and on Windows the delete
-/// simply fails and is retried on the next download.
-async fn enforce_cache_limit(dir: PathBuf, limit: u64) {
+/// Evict oldest files (by mtime) from `dir` until the total size of files
+/// matching `extensions` is at or under `limit`. `limit == 0` means
+/// unlimited (no-op). Only files whose name ends with one of `extensions`
+/// are counted and eligible for eviction — in-flight `.part` downloads
+/// (which never match) are left alone. Deleting a file that's currently
+/// being served is safe: on Unix the open handle keeps the bytes readable
+/// until the stream finishes, and on Windows the delete simply fails and
+/// is retried on the next download.
+///
+/// Shared by the audio stream cache (`.webm`) and the cover-image cache
+/// (`.jpg`/`.png`/`.webp`) — same growth shape (one file per unique key,
+/// no natural upper bound without this), same fix.
+async fn enforce_cache_limit(dir: PathBuf, limit: u64, extensions: &[&str]) {
     if limit == 0 {
         return;
     }
@@ -1841,12 +1862,12 @@ async fn enforce_cache_limit(dir: PathBuf, limit: u64) {
     let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
     let mut total: u64 = 0;
     while let Ok(Some(e)) = rd.next_entry().await {
-        let is_webm = e
+        let matches_ext = e
             .file_name()
             .to_str()
-            .map(|n| n.ends_with(".webm"))
+            .map(|n| extensions.iter().any(|ext| n.ends_with(ext)))
             .unwrap_or(false);
-        if !is_webm {
+        if !matches_ext {
             continue;
         }
         let Ok(meta) = e.metadata().await else { continue };
@@ -1894,7 +1915,7 @@ async fn set_cache_limit(
 ) -> Result<(), String> {
     state.cache_limit.store(bytes, Ordering::Relaxed);
     write_cache_limit(&app, bytes).await?;
-    enforce_cache_limit(stream_cache_dir(&app), bytes).await;
+    enforce_cache_limit(stream_cache_dir(&app), bytes, AUDIO_CACHE_EXTENSIONS).await;
     Ok(())
 }
 
@@ -2216,6 +2237,21 @@ async fn cache_cover(
         tokio::fs::rename(&part, &path)
             .await
             .map_err(|e| format!("rename: {e}"))?;
+
+        // Fire-and-forget: keep the cover cache under its cap without
+        // delaying this command's return — the webview is waiting on the
+        // URL below to render the image, so eviction shouldn't block it.
+        // Same non-blocking shape as the in-memory download-map eviction
+        // in `spawn_downloader`.
+        let evict_dir = dir.clone();
+        tokio::spawn(async move {
+            enforce_cache_limit(
+                evict_dir,
+                DEFAULT_COVER_CACHE_LIMIT_BYTES,
+                COVER_CACHE_EXTENSIONS,
+            )
+            .await;
+        });
     }
 
     Ok(format!("http://127.0.0.1:{port}/{token}/cover/{filename}"))
@@ -2632,7 +2668,7 @@ fn spawn_downloader(
         // wiped wholesale on startup, so it needs no per-track eviction.
         if success && target_dir == srv.cache_dir {
             let limit = srv.cache_limit.load(Ordering::Relaxed);
-            enforce_cache_limit(srv.cache_dir.clone(), limit).await;
+            enforce_cache_limit(srv.cache_dir.clone(), limit, AUDIO_CACHE_EXTENSIONS).await;
         }
     });
 }
@@ -2945,7 +2981,22 @@ async fn start_stream_server(
     // Bring the persistent cache under its cap immediately at startup —
     // e.g. after the user lowered the limit while the app was closed, or
     // after a crash left the cache over budget.
-    enforce_cache_limit(cache_dir.clone(), cache_limit.load(Ordering::Relaxed)).await;
+    enforce_cache_limit(
+        cache_dir.clone(),
+        cache_limit.load(Ordering::Relaxed),
+        AUDIO_CACHE_EXTENSIONS,
+    )
+    .await;
+
+    // Same idea for the cover-image cache — bring it under its (fixed)
+    // cap immediately at startup too, e.g. after a crash left it over
+    // budget or the app was updated with a lower default.
+    enforce_cache_limit(
+        cover_dir.clone(),
+        DEFAULT_COVER_CACHE_LIMIT_BYTES,
+        COVER_CACHE_EXTENSIONS,
+    )
+    .await;
 
     let server = StreamServer {
         app,

@@ -1,5 +1,6 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { invoke } from "@tauri-apps/api/core";
+import { createStore, del, entries, get, set } from "idb-keyval";
 
 /**
  * iTunes Search API as a hi-res cover-art fallback.
@@ -22,7 +23,7 @@ import { invoke } from "@tauri-apps/api/core";
  * which is hot in the browser image cache and survives restarts.
  */
 
-const CACHE_KEY_PREFIX = "ytm-cover-itunes:";
+const LEGACY_LOCALSTORAGE_PREFIX = "ytm-cover-itunes:";
 const POSITIVE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const NEGATIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const REQUEST_TIMEOUT_MS = 5000;
@@ -34,20 +35,49 @@ type CacheEntry = { url: string | null; expiresAt: number };
 const inflight = new Map<string, Promise<string | null>>();
 
 function cacheKey(artist: string, title: string): string {
-  return `${CACHE_KEY_PREFIX}${artist.toLowerCase().trim()}|${title
-    .toLowerCase()
-    .trim()}`;
+  return `${artist.toLowerCase().trim()}|${title.toLowerCase().trim()}`;
 }
 
-function readCache(key: string): CacheEntry | null {
+// Dedicated IndexedDB store for this cache — deliberately its own database
+// rather than a second store in `idb-storage.ts`'s `ytubic-stores` (an
+// `idb-keyval` database has exactly one object store; a second store there
+// would need a version-bumped schema migration). This used to live in
+// localStorage as `ytm-cover-itunes:*` keys, but lazy TTL eviction (only on
+// re-lookup) let thousands of ~200-byte keys accumulate in the same tight,
+// shared quota that also held the query cache and every zustand store — see
+// `query-client.ts` for the sibling fix. IndexedDB has a much larger,
+// disk-backed quota.
+const coverCacheStore =
+  typeof window !== "undefined"
+    ? createStore("ytubic-cover-cache", "urls")
+    : undefined;
+
+// In-memory mirror so repeat lookups within a session (e.g. a shelf
+// re-rendering with the same tracks) resolve without an IndexedDB round
+// trip. Populated on every read/write; never evicted independently — it's
+// bounded by the same `MAX_COVER_KEYS` sweep since we only ever add entries
+// that also exist in the durable store.
+const memoCache = new Map<string, CacheEntry>();
+
+async function readCache(key: string): Promise<CacheEntry | null> {
+  const memoed = memoCache.get(key);
+  if (memoed) {
+    if (memoed.expiresAt < Date.now()) {
+      memoCache.delete(key);
+      return null;
+    }
+    return memoed;
+  }
+  if (!coverCacheStore) return null;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = await get<string>(key, coverCacheStore);
     if (!raw) return null;
     const entry = JSON.parse(raw) as CacheEntry;
     if (entry.expiresAt < Date.now()) {
-      localStorage.removeItem(key);
+      void del(key, coverCacheStore);
       return null;
     }
+    memoCache.set(key, entry);
     return entry;
   } catch {
     return null;
@@ -55,58 +85,88 @@ function readCache(key: string): CacheEntry | null {
 }
 
 // Hard cap on cover cache entries. Lazy TTL eviction (only on re-lookup)
-// let this grow without bound — thousands of ~200-byte keys accumulate in
-// the same localStorage quota that also holds the query cache and stores.
+// would otherwise let this grow without bound.
 const MAX_COVER_KEYS = 500;
 let writesSinceSweep = 0;
 
 /** Drop expired/malformed cover entries and cap the total, evicting the
  *  soonest-to-expire first. Best-effort — never throws. */
-function sweepCoverCache(): void {
+async function sweepCoverCache(): Promise<void> {
+  if (!coverCacheStore) return;
   try {
+    const all = await entries<string, string>(coverCacheStore);
+    const now = Date.now();
     const live: { key: string; expiresAt: number }[] = [];
     const dead: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !key.startsWith(CACHE_KEY_PREFIX)) continue;
+    for (const [key, raw] of all) {
+      const k = String(key);
       try {
-        const e = JSON.parse(localStorage.getItem(key) ?? "") as CacheEntry;
-        if (e.expiresAt < Date.now()) dead.push(key);
-        else live.push({ key, expiresAt: e.expiresAt });
+        const e = JSON.parse(raw) as CacheEntry;
+        if (e.expiresAt < now) dead.push(k);
+        else live.push({ key: k, expiresAt: e.expiresAt });
       } catch {
-        dead.push(key);
+        dead.push(k);
       }
     }
-    for (const key of dead) localStorage.removeItem(key);
+    await Promise.all(
+      dead.map((k) => {
+        memoCache.delete(k);
+        return del(k, coverCacheStore);
+      }),
+    );
     if (live.length > MAX_COVER_KEYS) {
       live.sort((a, b) => a.expiresAt - b.expiresAt);
-      for (const e of live.slice(0, live.length - MAX_COVER_KEYS)) {
-        localStorage.removeItem(e.key);
-      }
+      const toEvict = live.slice(0, live.length - MAX_COVER_KEYS);
+      await Promise.all(
+        toEvict.map((e) => {
+          memoCache.delete(e.key);
+          return del(e.key, coverCacheStore);
+        }),
+      );
     }
   } catch {
     /* best-effort */
   }
 }
 
-function writeCache(key: string, url: string | null): void {
+async function writeCache(key: string, url: string | null): Promise<void> {
+  if (!coverCacheStore) return;
   const ttl = url ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS;
   const entry: CacheEntry = { url, expiresAt: Date.now() + ttl };
+  memoCache.set(key, entry);
   try {
-    localStorage.setItem(key, JSON.stringify(entry));
+    await set(key, JSON.stringify(entry), coverCacheStore);
   } catch {
     // Quota exceeded (or disabled): sweep and retry once so a full cache
-    // doesn't silently break persistence for everything sharing the quota.
-    sweepCoverCache();
+    // doesn't silently break persistence.
+    await sweepCoverCache();
     try {
-      localStorage.setItem(key, JSON.stringify(entry));
+      await set(key, JSON.stringify(entry), coverCacheStore);
     } catch {
       /* still failing — skip caching this lookup */
     }
   }
   if (++writesSinceSweep >= 100) {
     writesSinceSweep = 0;
-    sweepCoverCache();
+    void sweepCoverCache();
+  }
+}
+
+// One-time migration: this cache used to persist to localStorage as
+// `ytm-cover-itunes:*` keys. Drop the stale entries so that quota is
+// actually reclaimed — leaving them in place would defeat the point of
+// moving to IndexedDB.
+if (typeof window !== "undefined") {
+  try {
+    const staleKeys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(LEGACY_LOCALSTORAGE_PREFIX)) staleKeys.push(k);
+    }
+    for (const k of staleKeys) window.localStorage.removeItem(k);
+  } catch {
+    // Nothing to reclaim if this throws — same best-effort shape as
+    // `safeLocalStorage`.
   }
 }
 
@@ -133,14 +193,17 @@ export async function lookupITunesCover(
   if (!artist.trim() || !title.trim()) return null;
   const key = cacheKey(artist, title);
 
-  const cached = readCache(key);
-  if (cached) return cached.url;
-
+  // Registered synchronously (before any `await`) so two concurrent callers
+  // for the same key can't both miss the in-flight map while each is
+  // independently awaiting the (now-async) cache read below.
   const existing = inflight.get(key);
   if (existing) return existing;
 
   const promise = (async () => {
     try {
+      const cached = await readCache(key);
+      if (cached) return cached.url;
+
       const term = encodeURIComponent(`${artist} ${title}`);
       const url = `https://itunes.apple.com/search?term=${term}&entity=song&limit=1`;
       const res = await tauriFetch(url, {
@@ -156,7 +219,7 @@ export async function lookupITunesCover(
       };
       const artwork100 = json.results?.[0]?.artworkUrl100;
       const result = artwork100 ? upgradeITunesArtwork(artwork100) : null;
-      writeCache(key, result);
+      await writeCache(key, result);
       return result;
     } catch {
       // Network error / timeout — also don't cache, let the next track
