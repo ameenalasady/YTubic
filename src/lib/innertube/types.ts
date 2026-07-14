@@ -61,11 +61,25 @@ export type ShelfItem = {
   tint?: string;
 };
 
+/**
+ * "More" target for a shelf — the browseEndpoint YTM attaches to the
+ * shelf header (moreContentButton / title link / bottomEndpoint).
+ * `pageType` tells the UI where to route: a playlist page, the artist
+ * discography grid, etc.
+ */
+export type ShelfMore = {
+  browseId: string;
+  params?: string;
+  pageType?: string;
+};
+
 export type Shelf = {
   id: string;
   title: string;
   subtitle?: string;
   items: ShelfItem[];
+  /** Endpoint of the shelf's "More" link, when YTM provides one. */
+  more?: ShelfMore;
   /**
    * Hint for the UI: "list" when the shelf came from a row renderer
    * (musicResponsiveListItemRenderer — typical Top Songs section on
@@ -76,15 +90,32 @@ export type Shelf = {
   display?: "list" | "card" | "grid";
 };
 
+/**
+ * A playable watch target from a header button: either a seed video,
+ * a watch playlist (artist shuffle `RDAO…` / mix `RDEM…`), or both.
+ */
+export type WatchTarget = {
+  videoId?: string;
+  playlistId?: string;
+};
+
 export type ArtistPage = {
   id: string;
   name: string;
   description?: string;
+  /** Pre-formatted "241M monthly audience" text — what the official web header shows. */
+  monthlyAudience?: string;
+  /** Pre-formatted subscriber count ("618K"). */
   subscribers?: string;
+  /** Channel id the Subscribe button acts on (differs from the browse id). */
+  channelId?: string;
+  /** Current subscription state, when signed in. */
+  subscribed?: boolean;
   thumbnails: Thumbnail[];
-  /** Radio / shuffle endpoint video id, if present */
-  radioId?: string;
-  shuffleId?: string;
+  /** Header "Shuffle" button target (`RDAO…` watch playlist). */
+  shuffle?: WatchTarget;
+  /** Header "Mix" (radio) button target (`RDEM…` watch playlist). */
+  mix?: WatchTarget;
   shelves: Shelf[];
 };
 

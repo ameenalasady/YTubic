@@ -1,6 +1,6 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { invoke } from "@tauri-apps/api/core";
-import type { ShelfItem, Thumbnail } from "./types";
+import type { ShelfItem, ShelfMore, Thumbnail } from "./types";
 
 export type YtNode = Record<string, any>;
 
@@ -962,13 +962,43 @@ function mapCardShelfFeatured(card: YtNode): ShelfItem | null {
 }
 
 /**
+ * Pull the "More" browse endpoint off a shelf. YTM attaches it in one of
+ * three places depending on the renderer: the carousel header's
+ * `moreContentButton`, the shelf's `bottomEndpoint` (musicShelfRenderer),
+ * or a navigationEndpoint on the title run itself.
+ */
+function readShelfMore(music: YtNode): ShelfMore | undefined {
+  const header = music.header?.musicCarouselShelfBasicHeaderRenderer;
+  const nav =
+    header?.moreContentButton?.buttonRenderer?.navigationEndpoint ??
+    music.bottomEndpoint ??
+    header?.title?.runs?.[0]?.navigationEndpoint ??
+    music.title?.runs?.[0]?.navigationEndpoint;
+  const browse = nav?.browseEndpoint;
+  const browseId: string | undefined = browse?.browseId;
+  if (!browseId) return undefined;
+  return {
+    browseId,
+    params: browse.params,
+    pageType:
+      browse.browseEndpointContextSupportedConfigs
+        ?.browseEndpointContextMusicConfig?.pageType,
+  };
+}
+
+/**
  * Convert a shelf wrapper (carousel or shelf) into our Shelf DTO by mapping
  * every child renderer it contains.
  */
 export function mapShelfWrapper(
   wrapper: YtNode,
   index: number,
-): { title: string; items: ShelfItem[]; display: "list" | "card" | "grid" } {
+): {
+  title: string;
+  items: ShelfItem[];
+  display: "list" | "card" | "grid";
+  more?: ShelfMore;
+} {
   const card = wrapper.musicCardShelfRenderer;
   const music =
     wrapper.musicCarouselShelfRenderer ?? wrapper.musicShelfRenderer ?? card;
@@ -980,6 +1010,7 @@ export function mapShelfWrapper(
         music.header?.musicCarouselShelfBasicHeaderRenderer?.title ??
           music.title,
       );
+  const more = card ? undefined : readShelfMore(music);
   const rawItems: YtNode[] = music.contents ?? [];
 
   const items: ShelfItem[] = [];
@@ -1021,5 +1052,5 @@ export function mapShelfWrapper(
         ? "list"
         : "card";
 
-  return { title: title || `Section ${index + 1}`, items, display };
+  return { title: title || `Section ${index + 1}`, items, display, more };
 }

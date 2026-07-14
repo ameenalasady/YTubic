@@ -1,12 +1,28 @@
-import type { ArtistPage, Shelf } from "./types";
+import type { ArtistPage, Shelf, WatchTarget } from "./types";
 import {
   collectShelfNodes,
+  innertubePost,
   mapShelfWrapper,
   rawBrowse,
   readRuns,
   readThumbnails,
   type YtNode,
 } from "./shared";
+
+/**
+ * Read a header button's watch target. Both header buttons (Shuffle /
+ * Mix) ship a `watchEndpoint` carrying a seed videoId plus the watch
+ * playlist (`RDAO…` / `RDEM…`); older payloads used a bare
+ * `watchPlaylistEndpoint`.
+ */
+function readWatchTarget(button: YtNode | undefined): WatchTarget | undefined {
+  const ep = button?.buttonRenderer?.navigationEndpoint;
+  const videoId: string | undefined = ep?.watchEndpoint?.videoId;
+  const playlistId: string | undefined =
+    ep?.watchEndpoint?.playlistId ?? ep?.watchPlaylistEndpoint?.playlistId;
+  if (!videoId && !playlistId) return undefined;
+  return { videoId, playlistId };
+}
 
 export async function fetchArtist(id: string): Promise<ArtistPage> {
   const json = await rawBrowse(id);
@@ -18,27 +34,22 @@ export async function fetchArtist(id: string): Promise<ArtistPage> {
 
   const name = readRuns(header.title);
   const description = readRuns(header.description);
-  const subscribers = readRuns(header.subscriptionButton
-    ?.subscribeButtonRenderer?.subscriberCountText ?? header.subtitle);
+  const subscribeButton =
+    header.subscriptionButton?.subscribeButtonRenderer ?? {};
+  const subscribers = readRuns(subscribeButton.subscriberCountText);
+  // The official web header shows "241M monthly audience" here, not the
+  // subscriber count — mirror that.
+  const monthlyAudience = readRuns(header.monthlyListenerCount);
   const thumbnails = readThumbnails(
     header.thumbnail?.musicThumbnailRenderer?.thumbnail ??
       header.thumbnail?.croppedSquareThumbnailRenderer?.thumbnail ??
       header.foregroundThumbnail?.musicThumbnailRenderer?.thumbnail,
   );
 
-  const radioId: string | undefined =
-    header.startRadioButton?.buttonRenderer?.navigationEndpoint?.watchEndpoint
-      ?.videoId;
-  // The artist "play" button is a shuffle-all: its watchEndpoint carries
-  // both the first track's `videoId` and the shuffle-radio `playlistId`
-  // (`RDAO…`). We want the playlistId — feeding it to /next expands the
-  // whole catalogue into a shuffled queue. (An older layout exposed it as
-  // `watchPlaylistEndpoint.playlistId`, kept as a fallback.)
-  const shuffleId: string | undefined =
-    header.playButton?.buttonRenderer?.navigationEndpoint?.watchPlaylistEndpoint
-      ?.playlistId ??
-    header.playButton?.buttonRenderer?.navigationEndpoint?.watchEndpoint
-      ?.playlistId;
+  // Header buttons: `playButton` is Shuffle (RDAO… watch playlist),
+  // `startRadioButton` is Mix (RDEM…).
+  const shuffle = readWatchTarget(header.playButton);
+  const mix = readWatchTarget(header.startRadioButton);
 
   const tabs: YtNode[] =
     json?.contents?.singleColumnBrowseResultsRenderer?.tabs ?? [];
@@ -48,19 +59,40 @@ export async function fetchArtist(id: string): Promise<ArtistPage> {
 
   const shelves: Shelf[] = [];
   shelfNodes.forEach((wrapper, i) => {
-    const { title, items, display } = mapShelfWrapper(wrapper, i);
+    const { title, items, display, more } = mapShelfWrapper(wrapper, i);
     if (items.length === 0) return;
-    shelves.push({ id: `${title}-${i}`, title, items, display });
+    shelves.push({ id: `${title}-${i}`, title, items, display, more });
   });
 
   return {
     id,
     name,
     description: description || undefined,
+    monthlyAudience: monthlyAudience || undefined,
     subscribers: subscribers || undefined,
+    channelId: subscribeButton.channelId || undefined,
+    subscribed:
+      typeof subscribeButton.subscribed === "boolean"
+        ? subscribeButton.subscribed
+        : undefined,
     thumbnails,
-    radioId,
-    shuffleId,
+    shuffle,
+    mix,
     shelves,
   };
+}
+
+/**
+ * Toggle the artist-channel subscription. Requires a signed-in session —
+ * the shared innertubePost attaches SAPISIDHASH auth automatically; an
+ * anonymous call gets a 401 which surfaces as a thrown Error.
+ */
+export async function setArtistSubscribed(
+  channelId: string,
+  subscribed: boolean,
+): Promise<void> {
+  await innertubePost(
+    subscribed ? "subscription/subscribe" : "subscription/unsubscribe",
+    { channelIds: [channelId] },
+  );
 }

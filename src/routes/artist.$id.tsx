@@ -1,19 +1,34 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircleIcon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  Loader2Icon,
+  RadioIcon,
+  Share2Icon,
+  ShuffleIcon,
+  UserPlusIcon,
+} from "lucide-react";
 import { toast } from "sonner";
-import { fetchArtist } from "@/lib/innertube/artist";
-import { fetchArtistShuffle } from "@/lib/innertube/radio";
-import { usePlaybackStore } from "@/lib/store/playback";
+import { fetchArtist, setArtistSubscribed } from "@/lib/innertube/artist";
+import { fetchRadio, fetchWatchQueue } from "@/lib/innertube/radio";
 import { EntityHeader } from "@/components/shared/entity-header";
+import { ExpandableText } from "@/components/shared/expandable-text";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { TrackList } from "@/components/shared/track-list";
+import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  ShelfSectionSkeleton,
-  TrackRowSkeletonList,
-} from "@/components/shared/skeletons";
-import type { Shelf } from "@/lib/innertube/types";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { usePlaybackStore } from "@/lib/store/playback";
+import type {
+  ArtistPage,
+  Shelf,
+  ShelfMore,
+  WatchTarget,
+} from "@/lib/innertube/types";
 
 export const Route = createFileRoute("/artist/$id")({
   component: ArtistPageView,
@@ -47,88 +62,404 @@ function ArtistPageView() {
 
   if (isLoading || !data) return <ArtistSkeleton />;
 
-  // "Shuffle" plays the artist's whole catalogue, not just the handful of
-  // top songs shown on the page. YouTube Music exposes that as a shuffle
-  // radio playlist (`RDAO…`) on the header's play button; `fetchArtistShuffle`
-  // expands it into a fresh, already-shuffled, artist-first queue. Only
-  // offered when the artist actually has one.
-  const shuffleId = data.shuffleId;
-  const onShuffle = shuffleId
-    ? async () => {
-        try {
-          const { tracks, continuation } = await fetchArtistShuffle(shuffleId);
-          if (tracks.length) {
-            const store = usePlaybackStore.getState();
-            // The queue is already shuffled by YouTube and ordered
-            // artist-first → radio-tail-last. Clear the shuffle toggle so
-            // setQueue doesn't re-shuffle it (which would drag that radio
-            // tail up to the top), then play it in order from the start.
-            store.setShuffle(false);
-            store.playShelfItems(tracks, 0);
-            // Only the first page is loaded; hand the player the token so it
-            // pages the rest of the station in as the queue nears its end.
-            store.setStationContinuation(continuation);
-          } else {
-            toast.error("Couldn't shuffle — no tracks returned.");
-          }
-        } catch (e) {
-          toast.error(`Couldn't shuffle: ${(e as Error).message}`);
-        }
-      }
-    : undefined;
+  // Official web shows the monthly-audience stat in the header; the raw
+  // subscriber count lives on the Subscribe button instead.
+  const subtitle =
+    data.monthlyAudience ??
+    (data.subscribers ? `${data.subscribers} subscribers` : undefined);
 
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
       <EntityHeader
         title={data.name}
-        subtitle={data.subscribers}
-        description={data.description}
+        subtitle={subtitle}
         thumbnails={data.thumbnails}
         round
-        onShuffle={onShuffle}
+        actions={<ArtistActions artist={data} />}
       />
 
-      {data.shelves.map((shelf) =>
-        shelf.display === "list" ? (
-          <ListShelf key={shelf.id} shelf={shelf} />
+      {data.shelves.map((shelf) => {
+        // Only pass an action when the shelf actually has a More target —
+        // a truthy-but-empty element would hide the shelf's subtitle slot.
+        const more = shelf.more ? (
+          <ShelfMoreLink shelf={shelf} artist={data} />
+        ) : undefined;
+        const useTrackList =
+          shelf.display === "list" ||
+          shelf.title.trim().toLowerCase() === "from your library";
+        return useTrackList ? (
+          <ListShelf key={shelf.id} shelf={shelf} action={more} />
         ) : (
-          <ShelfCarousel key={shelf.id} shelf={shelf} />
-        ),
-      )}
+          <ShelfCarousel key={shelf.id} shelf={shelf} action={more} />
+        );
+      })}
+
+      <AboutSection key={data.id} artist={data} />
     </div>
   );
 }
 
-function ListShelf({ shelf }: { shelf: Shelf }) {
-  const tracks = shelf.items.filter((i) => i.kind === "song");
-  if (tracks.length === 0) return null;
+/**
+ * "About" panel at the bottom of the page — the full bio with a
+ * Read-more toggle plus the audience stats, mirroring the official
+ * web client's About card.
+ */
+function AboutSection({ artist }: { artist: ArtistPage }) {
+  if (!artist.description?.trim()) return null;
+
+  const stats: { value: string; label: string }[] = [];
+  if (artist.monthlyAudience) {
+    // "241M monthly audience" → value "241M", label "Monthly audience".
+    const [value, ...rest] = artist.monthlyAudience.split(" ");
+    const label = rest.join(" ");
+    stats.push({
+      value,
+      label: label
+        ? label.charAt(0).toUpperCase() + label.slice(1)
+        : "Monthly audience",
+    });
+  }
+  if (artist.subscribers) {
+    stats.push({ value: artist.subscribers, label: "Subscribers" });
+  }
+
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="truncate px-1 text-xl font-semibold tracking-tight">
-        {shelf.title}
-      </h2>
-      {/* Artist top-songs shelf doesn't carry duration in the YT
-          payload, but does ship a play count — swap the columns. */}
-      <TrackList tracks={tracks} showPlays />
+      <h2 className="px-1 text-xl font-semibold tracking-tight">About</h2>
+      <div className="flex flex-col gap-4 rounded-lg border border-border/60 bg-surface p-4">
+        {artist.description ? (
+          <ExpandableText
+            text={artist.description}
+            lines={5}
+            className="leading-relaxed"
+          />
+        ) : null}
+        {artist.description && stats.length > 0 ? <Separator /> : null}
+        {stats.length > 0 ? (
+          <div className="flex flex-wrap gap-x-10 gap-y-3">
+            {stats.map((s) => (
+              <div key={s.label} className="flex flex-col">
+                <span className="text-lg font-bold leading-tight">
+                  {s.value}
+                </span>
+                <span className="text-xs text-muted-foreground">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }
 
-// Mirrors the real hero (round cover, `data.subscribers` as the
-// subtitle line — text-sm → h-5) plus the page's actual shape below
-// it: a top-songs list shelf followed by carousel shelves.
+/**
+ * Header action row: Shuffle (primary), Mix, Subscribe, Share — the same
+ * four controls the official web header offers.
+ */
+function ArtistActions({ artist }: { artist: ArtistPage }) {
+  const [pending, setPending] = useState<"shuffle" | "mix" | null>(null);
+
+  const play = async (kind: "shuffle" | "mix", target?: WatchTarget) => {
+    if (!target || pending) return;
+    setPending(kind);
+    try {
+      const tracks = target.playlistId
+        ? await fetchWatchQueue(target.playlistId, target.videoId)
+        : target.videoId
+          ? await fetchRadio(target.videoId)
+          : [];
+      if (tracks.length) {
+        usePlaybackStore.getState().playShelfItems(tracks, 0);
+      } else {
+        toast.error("Couldn't start playback - no tracks returned.");
+      }
+    } catch (e) {
+      toast.error(`Couldn't start playback: ${(e as Error).message}`);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const share = async () => {
+    const url = `https://music.youtube.com/channel/${artist.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard");
+    } catch {
+      // Clipboard API can be unavailable in some webview contexts —
+      // fall back to the legacy execCommand path.
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      if (ok) toast.success("Link copied to clipboard");
+      else toast.error("Couldn't copy the link");
+    }
+  };
+
+  return (
+    <>
+      {artist.shuffle ? (
+        <Button
+          onClick={() => play("shuffle", artist.shuffle)}
+          disabled={pending !== null}
+          className="bg-brand text-white hover:bg-brand/90"
+        >
+          {pending === "shuffle" ? (
+            <Loader2Icon className="animate-spin" />
+          ) : (
+            <ShuffleIcon />
+          )}
+          Shuffle
+        </Button>
+      ) : null}
+      {artist.mix ? (
+        <Button
+          variant="outline"
+          onClick={() => play("mix", artist.mix)}
+          disabled={pending !== null}
+        >
+          {pending === "mix" ? (
+            <Loader2Icon className="animate-spin" />
+          ) : (
+            <RadioIcon />
+          )}
+          Mix
+        </Button>
+      ) : null}
+      {artist.channelId ? (
+        <SubscribeButton
+          channelId={artist.channelId}
+          initialSubscribed={artist.subscribed ?? false}
+          count={artist.subscribers}
+        />
+      ) : null}
+      <Button variant="outline" size="icon" aria-label="Share" onClick={share}>
+        <Share2Icon />
+      </Button>
+    </>
+  );
+}
+
+function SubscribeButton({
+  channelId,
+  initialSubscribed,
+  count,
+}: {
+  channelId: string;
+  initialSubscribed: boolean;
+  count?: string;
+}) {
+  const [subscribed, setSubscribed] = useState(initialSubscribed);
+  const [pending, setPending] = useState(false);
+
+  // Re-sync when the user navigates between artists (the component
+  // instance is reused across routes with different data).
+  useEffect(() => {
+    setSubscribed(initialSubscribed);
+  }, [channelId, initialSubscribed]);
+
+  const toggle = async () => {
+    if (pending) return;
+    const next = !subscribed;
+    setSubscribed(next);
+    setPending(true);
+    try {
+      await setArtistSubscribed(channelId, next);
+    } catch {
+      setSubscribed(!next);
+      toast.error(
+        next
+          ? "Couldn't subscribe - are you signed in?"
+          : "Couldn't unsubscribe - are you signed in?",
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Button
+      variant={subscribed ? "ghost" : "outline"}
+      className={
+        subscribed
+          ? "bg-foreground/[0.12] text-foreground shadow-none hover:bg-foreground/[0.18]"
+          : undefined
+      }
+      onClick={toggle}
+      disabled={pending}
+    >
+      {subscribed ? <CheckIcon /> : <UserPlusIcon />}
+      {subscribed ? "Subscribed" : "Subscribe"}
+      {count ? (
+        <span
+          className={
+            subscribed
+              ? "font-normal text-foreground/60"
+              : "font-normal text-muted-foreground"
+          }
+        >
+          {count}
+        </span>
+      ) : null}
+    </Button>
+  );
+}
+
+/**
+ * "More" link for a shelf header. Routes by the endpoint's pageType:
+ * playlists and albums go to their dedicated pages, everything else
+ * (discography grids, "Playlists by <artist>") goes to the generic
+ * /browse page carrying the opaque params token.
+ */
+function ShelfMoreLink({
+  shelf,
+  artist,
+}: {
+  shelf: Shelf;
+  artist: ArtistPage;
+}) {
+  const more = shelf.more;
+  if (!more) return null;
+
+  const cls =
+    "inline-flex shrink-0 items-center gap-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground";
+  const label = (
+    <>
+      More
+      <ChevronRightIcon className="size-4" />
+    </>
+  );
+
+  const target = moreTarget(more);
+  if (!target) return null;
+
+  if (target.kind === "playlist") {
+    const isTopSongs = shelf.display === "list";
+    return (
+      <Link
+        to="/playlist/$id"
+        params={{ id: target.id }}
+        search={
+          isTopSongs
+            ? {
+                view: "top-songs",
+                t: shelf.title,
+                a: artist.name,
+                aid: artist.id,
+                img: pickHighResThumbnail(artist.thumbnails) ?? "",
+              }
+            : {
+                from: "artist",
+                t: shelf.title,
+                a: artist.name,
+                aid: artist.id,
+                img: pickHighResThumbnail(artist.thumbnails) ?? "",
+              }
+        }
+        className={cls}
+      >
+        {label}
+      </Link>
+    );
+  }
+  if (target.kind === "album") {
+    return (
+      <Link to="/album/$id" params={{ id: target.id }} className={cls}>
+        {label}
+      </Link>
+    );
+  }
+  if (target.kind === "artist") {
+    return (
+      <Link to="/artist/$id" params={{ id: target.id }} className={cls}>
+        {label}
+      </Link>
+    );
+  }
+  return (
+    <Link
+      to="/browse/$id"
+      params={{ id: target.id }}
+      search={{
+        p: more.params ?? "",
+        t: shelf.title,
+        a: artist.name,
+        aid: artist.id,
+        img: pickHighResThumbnail(artist.thumbnails) ?? "",
+        view: shelf.display === "list" ? "top-songs" : "",
+      }}
+      className={cls}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function moreTarget(
+  more: ShelfMore,
+): { kind: "playlist" | "album" | "artist" | "browse"; id: string } | null {
+  const pageType = more.pageType ?? "";
+  if (pageType.includes("PLAYLIST")) {
+    return { kind: "playlist", id: more.browseId };
+  }
+  if (pageType.includes("ALBUM")) {
+    return { kind: "album", id: more.browseId };
+  }
+  // A bare artist link without params would just reload this page.
+  if (pageType.includes("ARTIST") && !pageType.includes("DISCOGRAPHY")) {
+    if (!more.params) return { kind: "artist", id: more.browseId };
+    return { kind: "browse", id: more.browseId };
+  }
+  return { kind: "browse", id: more.browseId };
+}
+
+function ListShelf({
+  shelf,
+  action,
+}: {
+  shelf: Shelf;
+  action?: React.ReactNode;
+}) {
+  const tracks = shelf.items.filter((i) => i.kind === "song");
+  if (tracks.length === 0) return null;
+  const normalizedTitle = shelf.title.trim().toLowerCase();
+  const visibleTracks =
+    normalizedTitle === "from your library" ? tracks.slice(0, 5) : tracks;
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-3 px-1">
+        <h2 className="truncate text-xl font-semibold tracking-tight">
+          {shelf.title}
+        </h2>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      {/* Top Songs carries play counts instead of duration. Other shelves
+          rendered as lists (such as From your library) keep Duration. */}
+      <TrackList
+        tracks={visibleTracks}
+        showPlays={normalizedTitle === "top songs"}
+      />
+    </section>
+  );
+}
+
 function ArtistSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-row items-end gap-6">
-        <Skeleton className="size-40 shrink-0 rounded-full" />
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end">
+        <Skeleton className="size-40 rounded-full md:size-48" />
+        <div className="flex flex-col gap-2">
           <Skeleton className="h-10 w-64" />
-          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-40" />
         </div>
       </div>
-      <TrackRowSkeletonList count={5} />
-      <ShelfSectionSkeleton titleWidth="w-40" />
+      <Skeleton className="h-40 w-full" />
+      <Skeleton className="h-40 w-full" />
     </div>
   );
 }

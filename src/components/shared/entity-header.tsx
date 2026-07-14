@@ -4,11 +4,8 @@ import type { Thumbnail as YtThumbnail } from "@/lib/innertube/types";
 
 type Props = {
   title: string;
-  /** Rendered directly under the title in the hero (e.g. artist
-   *  links, subscriber count) — plain text or rich content (links). */
   subtitle?: ReactNode;
   metadata?: string;
-  description?: string;
   thumbnails: YtThumbnail[];
   round?: boolean;
   onPlay?: () => void;
@@ -16,47 +13,64 @@ type Props = {
   /** Extra buttons rendered after Play/Shuffle — used for entity-
    *  specific actions (Pin playlist, Follow artist, etc.). */
   actions?: ReactNode;
+  /** Full-width controls pinned below both expanded and compact states. */
+  toolbar?: ReactNode;
+  /** Keep the subtitle as a second line in the compact header. */
+  keepSubtitleInCompact?: boolean;
 };
 
 /**
- * Data-only header marker. The actual hero / compact bar UI lives in
- * `<EntityPageHeader>`, rendered as the first child inside `<main>`;
- * this component just publishes whatever the current route wants the
- * header to show. Rendering nothing keeps the route's flex column
- * free of an empty slot — the page content (sort menu, track list,
- * etc.) sits flush below the bar.
+ * Data-only header marker. The actual morphing overlay UI lives in
+ * `<EntityPageHeader>` at the top of the content column (above
+ * `<main>`); this component just publishes whatever the current route
+ * wants the header to show. Rendering nothing keeps the route's flex
+ * column free of an empty slot — the page content (sort menu, track
+ * list, etc.) sits flush below the reserved header space.
  */
 export function EntityHeader({
   title,
   subtitle,
   metadata,
-  description,
   thumbnails,
   round = false,
   onPlay,
   onShuffle,
   actions,
+  toolbar,
+  keepSubtitleInCompact = false,
 }: Props) {
   const setConfig = useEntityHeaderStore((s) => s.setConfig);
 
-  // Re-publish every render so prop changes (new title after a slow
-  // fetch, sort-mode flipping the actions, etc.) flow through. The
-  // cleanup clears the store on unmount so a route without an
-  // EntityHeader doesn't inherit the previous page's bar.
+  // Publish prop changes without clearing the store between ordinary
+  // route re-renders. Clearing is handled by a separate unmount effect.
   useEffect(() => {
     setConfig({
       title,
       subtitle,
       metadata,
-      description,
       thumbnails,
       round,
       onPlay,
       onShuffle,
       actions,
+      toolbar,
+      keepSubtitleInCompact,
     });
-    return () => setConfig(null);
-  });
+  }, [
+    actions,
+    metadata,
+    keepSubtitleInCompact,
+    onPlay,
+    onShuffle,
+    round,
+    setConfig,
+    subtitle,
+    thumbnails,
+    title,
+    toolbar,
+  ]);
+
+  useEffect(() => () => setConfig(null), [setConfig]);
 
   return null;
 }

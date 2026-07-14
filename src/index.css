@@ -10,7 +10,7 @@
   --titlebar-h: 36px;
 
   /* YouTube brand red */
-  --brand: #FA1F3E;
+  --brand: #fa1f3e;
   --brand-foreground: oklch(0.985 0 0);
 
   --background: oklch(1 0 0);
@@ -150,8 +150,9 @@
   body,
   #root {
     @apply h-full bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-      Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+      Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
   }
@@ -178,9 +179,19 @@
   }
 
   /* Thin, subtle scrollbars (used in main content area and carousels). */
-  .shelf-scroll,
   .app-scroll {
     scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .shelf-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .shelf-hover-scrollbar .shelf-scroll {
+    scrollbar-color: transparent transparent;
+  }
+  .shelf-hover-scrollbar:hover .shelf-scroll,
+  .shelf-hover-scrollbar:focus-within .shelf-scroll {
     scrollbar-color: var(--border) transparent;
   }
   .shelf-scroll::-webkit-scrollbar,
@@ -192,12 +203,25 @@
   .app-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
-  .shelf-scroll::-webkit-scrollbar-thumb,
   .app-scroll::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 9999px;
   }
-  .shelf-scroll::-webkit-scrollbar-thumb:hover,
+  .shelf-scroll::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+    transition: background-color 150ms ease;
+  }
+  .shelf-hover-scrollbar .shelf-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+  .shelf-hover-scrollbar:hover .shelf-scroll::-webkit-scrollbar-thumb,
+  .shelf-hover-scrollbar:focus-within .shelf-scroll::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+  .shelf-hover-scrollbar:hover .shelf-scroll::-webkit-scrollbar-thumb:hover,
+  .shelf-hover-scrollbar:focus-within
+    .shelf-scroll::-webkit-scrollbar-thumb:hover,
   .app-scroll::-webkit-scrollbar-thumb:hover {
     background: var(--muted-foreground);
   }

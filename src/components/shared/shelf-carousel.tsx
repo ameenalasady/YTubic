@@ -122,7 +122,7 @@ export function ShelfCarousel({ shelf, action }: Props) {
   }, []);
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="shelf-hover-scrollbar flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-3 px-1">
         <h2 className="truncate text-xl font-semibold tracking-tight">
           {shelf.title}
@@ -138,7 +138,7 @@ export function ShelfCarousel({ shelf, action }: Props) {
 
       <div
         ref={scrollRef}
-        className="shelf-scroll shelf-edge-fade flex min-w-0 gap-2 overflow-x-auto overflow-y-hidden pb-3"
+        className="shelf-scroll shelf-edge-fade flex min-w-0 gap-2 overflow-x-auto overflow-y-hidden pb-1"
       >
         {shelf.items.map((item) => {
           // Video covers keep the cover height equal to a square (album)

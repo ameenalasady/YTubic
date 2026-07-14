@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
@@ -12,29 +12,31 @@ import { FloatingPlayerSync } from "@/components/layout/floating-player-sync";
 import { DragSnapOverlay } from "@/components/layout/drag-snap-overlay";
 import { WindowResizeHandles } from "@/components/layout/window-resize-handles";
 import { EntityPageHeader } from "@/components/layout/entity-page-header";
+import { useEntityHeaderStore } from "@/lib/store/entity-header";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { PremiumGateDialog } from "@/components/layout/premium-gate-dialog";
 import { ChannelPickerDialog } from "@/components/layout/channel-picker-dialog";
 import { WhatsNewDialog } from "@/components/layout/whats-new-dialog";
 import { CoverLightboxDialog } from "@/components/layout/cover-lightbox-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAudioEngine } from "@/lib/audio-engine";
-import { useLastfmScrobbler } from "@/lib/lastfm/scrobbler";
 import { useCacheAutoClean } from "@/lib/cache-cleanup";
 import { usePlaybackNotifications } from "@/lib/playback-notifications";
+import { useLastfmScrobbler } from "@/lib/lastfm-scrobbler";
 import { useYtdlpSetup } from "@/lib/ytdlp";
 import { useUpdateStartupCheck } from "@/lib/updater";
 import { useWhatsNewOnUpdate } from "@/lib/store/whats-new";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
+import { usePremiumStatusSync } from "@/lib/store/premium";
+import { usePanelResize } from "@/lib/panel-resize";
 import {
   usePanelsStore,
   CARD_CONTENT_GAP,
   CARD_EDGE_GAP,
 } from "@/lib/store/panels";
-import { usePanelResize } from "@/lib/panel-resize";
-import { usePremiumStatusSync } from "@/lib/store/premium";
 import { useCloseBehaviorSync, useSettingsStore } from "@/lib/store/settings";
 import { useDiscordPresenceSync } from "@/lib/store/discord";
 import {
@@ -42,6 +44,7 @@ import {
   useAccountsChangedListener,
   useLoginSuccessListener,
 } from "@/lib/store/accounts";
+import { cn } from "@/lib/utils";
 
 function isEditableTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
@@ -86,7 +89,6 @@ function useGlobalShortcuts() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   useAudioEngine();
-  useLastfmScrobbler();
   useYtdlpSetup();
   useUpdateStartupCheck();
   useWhatsNewOnUpdate();
@@ -99,46 +101,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   useDiscordPresenceSync();
   useCacheAutoClean();
   usePlaybackNotifications();
+  useLastfmScrobbler();
   const mode = useLayoutStore((s) => s.mode);
   const setMode = useLayoutStore((s) => s.setMode);
   const background = useSettingsStore((s) => s.background);
-  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
   const cardWidth = usePanelsStore((s) => s.cardWidth);
   // The player UI is hidden whenever there's no active track —
   // covers the "Nothing playing" empty state at first launch and
   // after the queue is cleared. The mode itself stays the same; the
   // player just reappears in the chosen slot once a track is loaded.
-  const hasTrack = usePlaybackStore((s) => s.index >= 0 && s.index < s.queue.length);
+  const hasTrack = usePlaybackStore(
+    (s) => s.index >= 0 && s.index < s.queue.length,
+  );
   // Set when we close the floating window programmatically (queue emptied)
   // so the player-window-closed handler doesn't mistake it for the user
   // clicking X and revert the persisted floating layout preference.
   const suppressRevertRef = useRef(false);
 
-  // Remember the last route across launches. The webview always cold-boots
-  // at "/", so on first mount we replace it with whatever page the user was
-  // last on. Scroll-to-top vs. scroll-restore for in-session navigation is
-  // handled by the router's scrollRestoration (see App.tsx), which keys the
-  // shared <main class="app-scroll"> scroller by its data-scroll-restoration-id.
-  const router = useRouter();
-  const href = useRouterState({ select: (s) => s.location.href });
+  // Single shared scroller for the whole app — reset to top whenever the
+  // route changes so opening a playlist (or any other page) doesn't land
+  // on whatever scrollTop the previous page happened to leave behind.
+  const mainRef = useRef<HTMLElement>(null);
+  const pathname = useLocation({ select: (loc) => loc.pathname });
   useEffect(() => {
-    const saved = localStorage.getItem("ytm-last-route");
-    // "/settings" was a route before the settings dialog replaced it —
-    // a stale saved value would land on the router's not-found page.
-    if (saved === "/settings") return;
-    if (saved && saved !== "/" && saved !== router.state.location.href) {
-      router.history.replace(saved);
-    }
-    // Only on first mount — restoring later would fight the user's navigation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem("ytm-last-route", href);
-    } catch {
-      /* storage full / disabled — non-fatal */
-    }
-  }, [href]);
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+  }, [pathname]);
 
   // Open / close the floating player window. We only spawn it when
   // there's actually something to show — at first launch with mode
@@ -198,22 +185,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   useEffect(() => {
     let cancelled = false;
-    const disposers: (() => void)[] = [];
-    const wire = <T,>(event: string, handler: (payload: T) => void) => {
-      void listen<T>(event, (e) => handler(e.payload)).then((un) => {
-        if (cancelled) un();
-        else disposers.push(un);
-      });
-    };
-    wire<{ id: string }>("nav:artist", ({ id }) =>
-      navigate({ to: "/artist/$id", params: { id } }),
-    );
-    wire<{ id: string }>("nav:album", ({ id }) =>
-      navigate({ to: "/album/$id", params: { id } }),
-    );
+    let dispose: (() => void) | undefined;
+    void listen<{ id: string }>("nav:artist", (e) => {
+      void navigate({ to: "/artist/$id", params: { id: e.payload.id } });
+    }).then((un) => {
+      if (cancelled) un();
+      else dispose = un;
+    });
     return () => {
       cancelled = true;
-      for (const d of disposers) d();
+      dispose?.();
     };
   }, [navigate]);
 
@@ -222,7 +203,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <SidebarProvider
         style={
           {
-            "--sidebar-width": `${sidebarWidth}px`,
+            "--sidebar-width": "13rem",
             "--sidebar-width-icon": "4rem",
           } as React.CSSProperties
         }
@@ -250,23 +231,23 @@ export function AppShell({ children }: { children: ReactNode }) {
                     : undefined,
               }}
             >
-              {/* Plain scroller — NOT Radix ScrollArea. Radix wraps the
-                  content in `display: table; min-width: 100%` which grows
-                  to intrinsic width and defeats any nested `overflow-x`
-                  (our horizontal carousels would never clip). */}
-              <main
-                data-scroll-restoration-id="main-scroll"
-                className="app-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
-              >
-                {/* Route entity header (playlist / album / artist).
-                    Lives INSIDE <main> as ordinary scroll content so
-                    scrolling the hero away is just scrolling — no
-                    height snap, no resizing <main>, no virtualizer
-                    thrash. See entity-page-header.tsx for how its
-                    compact bar sticks + fades in. */}
+              {/* Route entity header (playlist / album / artist).
+                  An absolute overlay outside the scroll flow. <main>
+                  always reserves the expanded height as padding, keeping
+                  content movement exactly aligned with scrollTop. */}
+              {/* The wrapper is the header's positioning context. It
+                  sits INSIDE the column's conditional right padding
+                  (the reserved player-card slot) — anchoring the
+                  absolute header to the column itself would stretch it
+                  across the padding box, under the player card. */}
+              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                 <EntityPageHeader />
-                {children}
-              </main>
+                {/* Plain scroller — NOT Radix ScrollArea. Radix wraps the
+                    content in `display: table; min-width: 100%` which grows
+                    to intrinsic width and defeats any nested `overflow-x`
+                    (our horizontal carousels would never clip). */}
+                <EntityScroller mainRef={mainRef}>{children}</EntityScroller>
+              </div>
               {mode === "bottom" && hasTrack && <PlayerBarBottom />}
             </div>
             {mode === "right" && hasTrack && (
@@ -280,6 +261,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DragSnapOverlay />
           <WindowResizeHandles />
           <SettingsDialog />
+          <PremiumGateDialog />
           <ChannelPickerDialog />
           <WhatsNewDialog />
           <CoverLightboxDialog />
@@ -291,69 +273,32 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 /**
- * Drag handle on the sidebar's right edge. Positioned by `left:
- * sidebarWidth` against the same `relative` wrapper the sidebar itself
- * is pinned to, so it always tracks the sidebar's actual right edge —
- * including while collapsed to icon width, where it hides itself
- * rather than let a stray handle imply the icon rail can be resized.
- * Double-click resets to the default width.
+ * The shared app scroller. Reserves the entity header's expanded
+ * height as padding-top whenever a route publishes a header config —
+ * the header itself is an absolute overlay (see EntityPageHeader), so
+ * this padding is the only thing keeping content below it. Isolated
+ * in its own component so the padding-top updates don't re-render the
+ * whole AppShell.
  */
-function SidebarResizeHandle() {
-  const { state } = useSidebar();
-  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
-  const setSidebarWidth = usePanelsStore((s) => s.setSidebarWidth);
-  const resetSidebarWidth = usePanelsStore((s) => s.resetSidebarWidth);
-  const { onPointerDown, onDoubleClick } = usePanelResize({
-    getWidth: () => usePanelsStore.getState().sidebarWidth,
-    setWidth: setSidebarWidth,
-    direction: "grow-right",
-    onReset: resetSidebarWidth,
-  });
-
-  if (state === "collapsed") return null;
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      onPointerDown={onPointerDown}
-      onDoubleClick={onDoubleClick}
-      className="absolute top-(--titlebar-h) bottom-0 z-20 w-1.5 -translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
-      style={{ left: sidebarWidth }}
-    />
+function EntityScroller({
+  mainRef,
+  children,
+}: {
+  mainRef: React.RefObject<HTMLElement | null>;
+  children: ReactNode;
+}) {
+  const headerPad = useEntityHeaderStore((s) =>
+    s.config ? s.headerHeight : 0,
   );
-}
-
-/**
- * Drag handle on the side card's left edge. The card itself is
- * `position: fixed` with `right-2` (8px) from the window edge, so its
- * left edge sits `CARD_EDGE_GAP + cardWidth` from the window's right
- * edge — this handle is positioned the same way (as `right`, not
- * `left`) so it tracks that edge regardless of sidebar width. Double-
- * click resets to the default width.
- */
-function CardResizeHandle() {
-  const cardWidth = usePanelsStore((s) => s.cardWidth);
-  const setCardWidth = usePanelsStore((s) => s.setCardWidth);
-  const resetCardWidth = usePanelsStore((s) => s.resetCardWidth);
-  const { onPointerDown, onDoubleClick } = usePanelResize({
-    getWidth: () => usePanelsStore.getState().cardWidth,
-    setWidth: setCardWidth,
-    direction: "grow-left",
-    onReset: resetCardWidth,
-  });
-
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize player card"
-      onPointerDown={onPointerDown}
-      onDoubleClick={onDoubleClick}
-      className="fixed top-(--titlebar-h) bottom-2 z-20 w-1.5 translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
-      style={{ right: CARD_EDGE_GAP + cardWidth }}
-    />
+    <main
+      ref={mainRef}
+      className="app-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+    >
+      <div className="app-scroll-content" style={{ paddingTop: headerPad }}>
+        {children}
+      </div>
+    </main>
   );
 }
 
@@ -421,5 +366,72 @@ function BackgroundCover() {
         />
       )}
     </>
+  );
+}
+
+/**
+ * Drag handle on the sidebar's right edge. Positioned by `left:
+ * sidebarWidth` against the same `relative` wrapper the sidebar itself
+ * is pinned to, so it always tracks the sidebar's actual right edge —
+ * including while collapsed to icon width, where it hides itself
+ * rather than let a stray handle imply the icon rail can be resized.
+ * Double-click resets to the default width.
+ */
+function SidebarResizeHandle() {
+  const { state } = useSidebar();
+  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
+  const setSidebarWidth = usePanelsStore((s) => s.setSidebarWidth);
+  const resetSidebarWidth = usePanelsStore((s) => s.resetSidebarWidth);
+  const { onPointerDown, onDoubleClick } = usePanelResize({
+    getWidth: () => usePanelsStore.getState().sidebarWidth,
+    setWidth: setSidebarWidth,
+    direction: "grow-right",
+    onReset: resetSidebarWidth,
+  });
+
+  if (state === "collapsed") return null;
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      className="absolute top-(--titlebar-h) bottom-0 z-20 w-1.5 -translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
+      style={{ left: sidebarWidth }}
+    />
+  );
+}
+
+/**
+ * Drag handle on the side card's left edge. The card itself is
+ * `position: fixed` with `right-2` (8px) from the window edge, so its
+ * left edge sits `CARD_EDGE_GAP + cardWidth` from the window's right
+ * edge — this handle is positioned the same way (as `right`, not
+ * `left`) so it tracks that edge regardless of sidebar width. Double-
+ * click resets to the default width.
+ */
+function CardResizeHandle() {
+  const cardWidth = usePanelsStore((s) => s.cardWidth);
+  const setCardWidth = usePanelsStore((s) => s.setCardWidth);
+  const resetCardWidth = usePanelsStore((s) => s.resetCardWidth);
+  const { onPointerDown, onDoubleClick } = usePanelResize({
+    getWidth: () => usePanelsStore.getState().cardWidth,
+    setWidth: setCardWidth,
+    direction: "grow-left",
+    onReset: resetCardWidth,
+  });
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize player card"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      className="fixed top-(--titlebar-h) bottom-2 z-20 w-1.5 translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
+      style={{ right: CARD_EDGE_GAP + cardWidth }}
+    />
   );
 }

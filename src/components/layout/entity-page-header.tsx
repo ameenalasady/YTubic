@@ -1,293 +1,300 @@
 import { memo, useEffect, useRef } from "react";
 import { PlayIcon, ShuffleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Thumbnail,
-  getRenderedThumbnailSrc,
-} from "@/components/shared/thumbnail";
-import { openCoverLightbox } from "@/lib/store/cover-lightbox";
+import { Thumbnail } from "@/components/shared/thumbnail";
 import { cn } from "@/lib/utils";
 import {
   useEntityHeaderStore,
   type EntityHeaderConfig,
 } from "@/lib/store/entity-header";
 
+const EXPANDED_HEIGHT = 184;
+const COMPACT_HEIGHT = 66;
+const COLLAPSE_DISTANCE = EXPANDED_HEIGHT - COMPACT_HEIGHT;
+const TOOLBAR_HEIGHT = 60;
+const COVER_SIZE = 148;
+const COMPACT_COVER_SIZE = 44;
+const COMPACT_ROUND_COVER_SIZE = 48;
+const COVER_TOP = 18;
+const COMPACT_COVER_TOP = 11;
+const COMPACT_ROUND_COVER_TOP = 9;
+const INFO_LEFT = 206;
+const COMPACT_INFO_LEFT = 82;
+const COMPACT_ROUND_INFO_LEFT = 86;
+
 /**
- * Route header: a full hero that scrolls away as ordinary page
- * content, plus a compact bar that sticks to the top of the scroller
- * and fades in as the hero scrolls past.
- *
- * Architecture: rendered as the FIRST CHILD of `<main class="app-scroll">`
- * (the scroll container itself), not above it. The hero is then just
- * scroll content — no artificial height snap between a "hero" and
- * "compact" box, no resizing `<main>` on scroll, no virtualizer thrash
- * from a moving scrollport. That resize-avoidance was the reason the
- * previous version deliberately snapped height instead of animating
- * it; putting the hero inside the scroller removes the need for the
- * snap (and the jump it caused) entirely.
- *
- * The compact bar is a sibling placed immediately after the hero with
- * `margin-top: -COMPACT_HEIGHT`, so it overlaps the hero's own bottom
- * edge and contributes zero extra flow height — content below follows
- * the hero exactly as before. `position: sticky` still works from
- * that overlapped position: it has nowhere to stick to until the hero
- * has actually scrolled that far up, at which point it pins under the
- * title bar and fades to opaque.
- *
- * Performance: the fade is driven by direct DOM style writes on a ref
- * inside a rAF-throttled scroll handler — not React state — so
- * scrolling through the short fade window doesn't re-render anything.
+ * One physical header that morphs using compositor-only transforms.
+ * The scroller permanently reserves the expanded height, so every pixel of
+ * wheel movement remains one pixel of content movement. No layout property is
+ * changed while scrolling and no geometry is read from the hot scroll path.
  */
-
-/** Fixed pixel height of the compact bar. */
-const COMPACT_HEIGHT = 72;
-
-/** Px of scroll, immediately before the compact bar would stick, over
- *  which it fades in — replaces the old binary 16px snap with a
- *  continuous transition so the first bit of scrolling has nothing to
- *  jump. */
-const FADE_RANGE = 40;
-
 export function EntityPageHeader() {
   const config = useEntityHeaderStore((s) => s.config);
-  const heroRef = useRef<HTMLDivElement>(null);
-  const compactRef = useRef<HTMLDivElement>(null);
-  const heroHeightRef = useRef(0);
+  const hasConfig = config !== null;
+  const hasToolbar = config?.toolbar != null;
+  const keepSubtitleInCompact = config?.keepSubtitleInCompact === true;
+  const useLargeCompactAvatar = config?.round === true;
+  const setHeaderHeight = useEntityHeaderStore((s) => s.setHeaderHeight);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const geometryRef = useRef({
+    titleTop: 0,
+    actionsTop: 0,
+    actionsX: 0,
+  });
 
   useEffect(() => {
-    const hero = heroRef.current;
-    const compact = compactRef.current;
-    if (!hero || !compact) return;
+    const scroller = document.querySelector<HTMLElement>("main.app-scroll");
+    const scrollContent = scroller?.querySelector<HTMLElement>(
+      ":scope > .app-scroll-content",
+    );
+    const header = headerRef.current;
+    const cover = coverRef.current;
+    const title = titleRef.current;
+    const details = detailsRef.current;
+    if (
+      !scroller ||
+      !scrollContent ||
+      !header ||
+      !cover ||
+      !title ||
+      !details ||
+      !hasConfig
+    )
+      return;
 
-    const applyProgress = (scrollTop: number) => {
-      const threshold = heroHeightRef.current - COMPACT_HEIGHT;
-      const fadeStart = threshold - FADE_RANGE;
-      const t =
-        FADE_RANGE <= 0
-          ? scrollTop >= threshold
-            ? 1
-            : 0
-          : Math.min(1, Math.max(0, (scrollTop - fadeStart) / FADE_RANGE));
-      const active = t > 0.5;
-      compact.style.opacity = String(t);
-      compact.style.transform = `translate3d(0, ${(1 - t) * -6}px, 0)`;
-      compact.style.pointerEvents = active ? "auto" : "none";
-      compact.style.borderBottomColor = active
-        ? "var(--border)"
-        : "transparent";
-      compact.setAttribute("aria-hidden", active ? "false" : "true");
-    };
+    const toolbarHeight = hasToolbar ? TOOLBAR_HEIGHT : 0;
+    const expandedTotalHeight = EXPANDED_HEIGHT + toolbarHeight;
+    const compactTotalHeight = COMPACT_HEIGHT + toolbarHeight;
+    setHeaderHeight(expandedTotalHeight);
+    let frame = 0;
 
+    // Geometry is measured only when content or the window size changes.
+    // The resulting deltas are cached and reused throughout scrolling.
     const measure = () => {
-      heroHeightRef.current = hero.offsetHeight;
+      const actions = actionsRef.current;
+      geometryRef.current = {
+        titleTop: title.offsetTop,
+        actionsTop: actions?.offsetTop ?? 0,
+        actionsX: actions
+          ? header.clientWidth - 24 - actions.offsetWidth - INFO_LEFT
+          : 0,
+      };
     };
+
+    const apply = () => {
+      frame = 0;
+      const top = Math.max(0, scroller.scrollTop);
+      const progress = Math.min(1, top / COLLAPSE_DISTANCE);
+      const { titleTop, actionsTop, actionsX } = geometryRef.current;
+      const compactCoverSize = useLargeCompactAvatar
+        ? COMPACT_ROUND_COVER_SIZE
+        : COMPACT_COVER_SIZE;
+      const compactCoverTop = useLargeCompactAvatar
+        ? COMPACT_ROUND_COVER_TOP
+        : COMPACT_COVER_TOP;
+      const compactInfoLeft = useLargeCompactAvatar
+        ? COMPACT_ROUND_INFO_LEFT
+        : COMPACT_INFO_LEFT;
+      const coverScale = 1 - progress * (1 - compactCoverSize / COVER_SIZE);
+      const titleScale = 1 - progress * 0.45;
+      // Keep subtitle/metadata visually attached to the moving title.
+      // They remain fully readable through the first part of the morph,
+      // then fade only as the compact bar runs out of vertical room.
+      const detailFade = keepSubtitleInCompact
+        ? 0
+        : Math.min(1, Math.max(0, (progress - 0.35) / 0.25));
+      const detailOpacity = 1 - detailFade;
+      const infoX = (compactInfoLeft - INFO_LEFT) * progress;
+      const compactTitleTop = keepSubtitleInCompact ? 8 : 20;
+      const infoY = (compactTitleTop - titleTop) * progress;
+      // Follow the title's visual bottom edge, including the height it
+      // loses while scaling. Without this compensation the subtitle's
+      // gap grows and makes it look as if it drifts downward.
+      const detailsY = keepSubtitleInCompact
+        ? (32 - (titleTop + 46)) * progress
+        : infoY + 46 * (titleScale - 1) - 8 * progress;
+
+      cover.style.transform = `translate3d(0, ${(compactCoverTop - COVER_TOP) * progress}px, 0) scale(${coverScale})`;
+      title.style.transform = `translate3d(${infoX}px, ${infoY}px, 0) scale(${titleScale})`;
+      details.style.opacity = String(detailOpacity);
+      details.style.visibility = detailOpacity <= 0 ? "hidden" : "visible";
+      details.style.transform = `translate3d(${infoX}px, ${detailsY}px, 0)`;
+
+      const actions = actionsRef.current;
+      if (actions) {
+        actions.style.transform = `translate3d(${actionsX * progress}px, ${(13 - actionsTop) * progress}px, 0)`;
+      }
+
+      const toolbar = toolbarRef.current;
+      if (toolbar) {
+        toolbar.style.transform = `translate3d(0, ${-Math.min(top, COLLAPSE_DISTANCE)}px, 0)`;
+      }
+
+      const clipHeight = Math.max(
+        compactTotalHeight,
+        expandedTotalHeight - top,
+      );
+      // Clip only the route content. Applying this to the scroller itself
+      // would also cut its native scrollbar under the header.
+      scrollContent.style.clipPath = `inset(${top + clipHeight}px 0 0 0)`;
+    };
+
+    const scheduleApply = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(apply);
+    };
+
     measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(hero);
+    apply();
+    const resizeObserver = new ResizeObserver(() => {
+      measure();
+      scheduleApply();
+    });
+    resizeObserver.observe(header);
+    if (actionsRef.current) resizeObserver.observe(actionsRef.current);
+    scroller.addEventListener("scroll", scheduleApply, { passive: true });
 
-    const scroller = compact.closest<HTMLElement>("main.app-scroll");
-    if (!scroller) {
-      return () => ro.disconnect();
-    }
-
-    let raf = 0;
-    const tick = () => {
-      raf = 0;
-      applyProgress(scroller.scrollTop);
-    };
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(tick);
-    };
-    tick();
-    scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      ro.disconnect();
-      scroller.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
+      scroller.removeEventListener("scroll", scheduleApply);
+      if (frame) cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      scrollContent.style.clipPath = "";
     };
-  }, [config]);
+    // Playlist pages publish fresh callback/action identities whenever a
+    // continuation lands. The scroll driver depends only on the header being
+    // mounted, not on those identities, so keep it alive across config updates.
+  }, [
+    hasConfig,
+    hasToolbar,
+    keepSubtitleInCompact,
+    setHeaderHeight,
+    useLargeCompactAvatar,
+  ]);
 
   if (!config) return null;
 
-  return (
-    // Hero and compact bar are DIRECT children of <main> (a Fragment,
-    // not a wrapping div) — sticky positioning stays in effect only
-    // within its parent's box, and that parent needs to span the rest
-    // of the scrollable page, not just the hero's own height. A
-    // wrapping div here would make the parent exactly `heroHeight`
-    // tall (the negative margin below cancels the compact bar's own
-    // contribution), so the compact bar would immediately un-stick
-    // the moment its short parent scrolled out of view — it would
-    // flash in, then disappear on the next bit of scroll. Parenting it
-    // to <main> directly gives it the whole page to stay pinned to.
-    <>
-      <div ref={heroRef}>
-        <HeroLayout config={config} />
-      </div>
-      <div
-        ref={compactRef}
-        aria-hidden="true"
-        // `bg-surface`, not `bg-background` — this is the same
-        // translucent-tint-over-the-blurred-cover recipe the sidebar
-        // and player card use (no backdrop-blur needed; the blur
-        // already happened once at the source, on BackgroundCover
-        // itself). `bg-background/90` read as a flat, near-opaque dark
-        // slab that ignored the ambient tint entirely.
-        className="sticky top-0 z-20 border-b border-transparent bg-surface transition-[border-color] duration-200"
-        style={{
-          height: COMPACT_HEIGHT,
-          marginTop: -COMPACT_HEIGHT,
-          opacity: 0,
-          pointerEvents: "none",
-          willChange: "opacity, transform",
-        }}
-      >
-        <CompactLayout config={config} />
-      </div>
-    </>
-  );
-}
+  const hasActions = !!(config.onPlay || config.onShuffle || config.actions);
+  const detailsHeight =
+    (config.subtitle ? 24 : 0) +
+    (config.metadata ? 22 : 0) +
+    (hasActions ? 58 : 0);
+  const titleTop = Math.max(18, (EXPANDED_HEIGHT - 46 - detailsHeight) / 2);
 
-const HeroLayout = memo(function HeroLayout({
-  config,
-}: {
-  config: EntityHeaderConfig;
-}) {
-  const hasButtons = !!(config.onPlay || config.onShuffle || config.actions);
-  const coverRef = useRef<HTMLButtonElement>(null);
   return (
     <div
-      className={cn(
-        "flex flex-row gap-6 px-6 pt-3 pb-4",
-        // Album/playlist covers are always exactly size-40, so bottom-
-        // aligning with the text column reads as an intentional
-        // baseline. An artist's text column (name + listeners +
-        // description + Shuffle button) is often taller than the
-        // size-40 avatar, and items-end would then push the avatar's
-        // TOP below the title's top — the title visibly "pops out"
-        // above the round avatar. Center them instead.
-        config.round ? "items-center" : "items-end",
-      )}
+      ref={headerRef}
+      className="pointer-events-none absolute inset-x-0 top-0 z-20"
+      style={{
+        height: EXPANDED_HEIGHT + (hasToolbar ? TOOLBAR_HEIGHT : 0),
+      }}
     >
-      <button
+      <div
         ref={coverRef}
-        type="button"
-        onClick={() => {
-          const url = getRenderedThumbnailSrc(coverRef.current);
-          if (url) openCoverLightbox(url, config.title);
-        }}
-        aria-label={`Enlarge cover for ${config.title}`}
-        className={cn(
-          "block shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          config.round ? "rounded-full" : "rounded-md",
-        )}
+        className="pointer-events-auto absolute left-6 top-[18px] size-[148px] origin-top-left"
+        style={{ willChange: "transform" }}
       >
         <Thumbnail
           thumbnails={config.thumbnails}
           alt={config.title}
           round={config.round}
           className={cn(
-            "size-40 shrink-0",
-            config.round ? "" : "border border-hairline shadow-lg",
+            "size-full border border-hairline",
+            !config.round && "shadow-lg",
           )}
           targetSize={512}
           highRes
         />
-      </button>
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <h1 className="truncate text-3xl font-bold leading-tight tracking-tight md:text-4xl">
-          {config.title}
-        </h1>
+      </div>
+
+      <h1
+        ref={titleRef}
+        className="pointer-events-auto absolute right-6 min-w-0 origin-top-left truncate text-[40px] font-bold leading-[1.15] tracking-tight"
+        style={{ left: INFO_LEFT, top: titleTop, willChange: "transform" }}
+      >
+        {config.title}
+      </h1>
+
+      <div
+        ref={detailsRef}
+        className="pointer-events-auto absolute right-6"
+        style={{
+          left: INFO_LEFT,
+          top: titleTop + 46,
+          willChange: "opacity, transform",
+        }}
+      >
         {config.subtitle ? (
-          <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+          <p className="mt-1 truncate text-sm text-muted-foreground">
             {config.subtitle}
-          </div>
+          </p>
         ) : null}
         {config.metadata ? (
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="mt-1.5 truncate text-xs text-muted-foreground">
             {config.metadata}
           </p>
         ) : null}
-        {config.description ? (
-          <p className="line-clamp-3 text-sm text-muted-foreground">
-            {config.description}
-          </p>
-        ) : null}
-        {hasButtons ? (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {config.onPlay ? (
-              <Button
-                onClick={config.onPlay}
-                className="bg-brand text-white hover:bg-brand/90"
-              >
-                <PlayIcon className="fill-current" />
-                Play
-              </Button>
-            ) : null}
-            {config.onShuffle ? (
-              <Button variant="outline" onClick={config.onShuffle}>
-                <ShuffleIcon />
-                Shuffle
-              </Button>
-            ) : null}
-            {config.actions}
-          </div>
-        ) : null}
       </div>
+
+      {hasActions ? (
+        <div
+          ref={actionsRef}
+          className="pointer-events-auto absolute flex shrink-0 items-center gap-2"
+          style={{
+            left: INFO_LEFT,
+            top:
+              titleTop +
+              46 +
+              (config.subtitle ? 24 : 0) +
+              (config.metadata ? 22 : 0) +
+              18,
+            willChange: "transform",
+          }}
+        >
+          <HeaderActions config={config} />
+        </div>
+      ) : null}
+
+      {config.toolbar ? (
+        <div
+          ref={toolbarRef}
+          className="pointer-events-auto absolute inset-x-6 top-[184px] h-[60px] pt-[11px]"
+          style={{ willChange: "transform" }}
+        >
+          {config.toolbar}
+        </div>
+      ) : null}
     </div>
   );
-});
+}
 
-const CompactLayout = memo(function CompactLayout({
+const HeaderActions = memo(function HeaderActions({
   config,
 }: {
   config: EntityHeaderConfig;
 }) {
-  const hasButtons = !!(config.onPlay || config.onShuffle || config.actions);
   return (
-    <div className="flex h-full flex-row items-center gap-3 px-6">
-      <Thumbnail
-        thumbnails={config.thumbnails}
-        alt={config.title}
-        round={config.round}
-        className={cn(
-          "size-14 shrink-0",
-          config.round ? "" : "border border-hairline shadow",
-        )}
-        targetSize={256}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <h2 className="truncate text-base font-semibold leading-tight">
-          {config.title}
-        </h2>
-        {config.metadata ? (
-          <p className="truncate text-xs text-muted-foreground">
-            {config.metadata}
-          </p>
-        ) : null}
-      </div>
-      {hasButtons ? (
-        <div className="flex shrink-0 items-center gap-2">
-          {config.onPlay ? (
-            <Button
-              onClick={config.onPlay}
-              size="sm"
-              className="bg-brand text-white hover:bg-brand/90"
-            >
-              <PlayIcon className="fill-current" />
-              Play
-            </Button>
-          ) : null}
-          {config.onShuffle ? (
-            <Button variant="outline" size="sm" onClick={config.onShuffle}>
-              <ShuffleIcon />
-              Shuffle
-            </Button>
-          ) : null}
-          {config.actions}
-        </div>
+    <>
+      {config.onPlay ? (
+        <Button
+          onClick={config.onPlay}
+          className="bg-brand text-white hover:bg-brand/90"
+        >
+          <PlayIcon className="fill-current" />
+          Play
+        </Button>
       ) : null}
-    </div>
+      {config.onShuffle ? (
+        <Button variant="outline" onClick={config.onShuffle}>
+          <ShuffleIcon />
+          Shuffle
+        </Button>
+      ) : null}
+      {config.actions}
+    </>
   );
 });
