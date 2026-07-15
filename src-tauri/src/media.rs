@@ -1,22 +1,20 @@
 // OS media controls via `souvlaki`: on Windows this is the System Media
 // Transport Controls (SMTC) — the media tile in the Quick Settings / volume
-// flyout, the lock screen, and the hardware media keys. On Linux it's an
-// MPRIS session — desktop widgets (KDE/GNOME Now Playing), `playerctl`, and
-// media keys.
+// flyout, the lock screen, and the hardware media keys. Linux maps to MPRIS;
+// macOS maps to Now Playing / MPRemoteCommandCenter. souvlaki does not need a
+// window handle on either platform, so `hwnd: None` is a real backend.
 //
 // Why we drive this from Rust instead of the webview's `navigator.mediaSession`:
-// the audio plays in an `<audio>` element inside the webview, so the webview
-// engine creates its OWN media session — but on Windows that session is owned
-// by the `msedgewebview2.exe` child process, whose app identity Windows can't
-// resolve, so the tile shows "Unknown app" with no icon (WebView2Feedback
-// #2236, open since 2022). On Linux, WebKitGTK doesn't bridge
-// `navigator.mediaSession` to MPRIS at all, so nothing shows up on the desktop.
-// Creating the SMTC/MPRIS session ourselves, bound to the host process, makes
-// both platforms resolve to YTubic's own identity (name + icon). On Windows,
-// Chromium's competing "Unknown app" tile is suppressed by disabling its media
-// session via `--disable-features=...MediaSessionService` on the main window
-// (see `additionalBrowserArgs` in tauri.conf.json) — WebKitGTK has no
-// equivalent to disable since it never bridges to MPRIS in the first place.
+// the audio plays in an `<audio>` element inside WebView2, so Chromium creates
+// its OWN SMTC session — but that session is owned by the `msedgewebview2.exe`
+// child process, whose app identity Windows can't resolve, so the tile shows
+// "Unknown app" with no icon. There is no supported API to re-attribute a
+// WebView2 media session to the host app (WebView2Feedback #2236, open since
+// 2022). Creating the SMTC ourselves, bound to the host process's main window,
+// makes Windows resolve the tile to YTubic's own executable identity (name +
+// icon). Chromium's competing "Unknown app" tile is suppressed by disabling its
+// media session via `--disable-features=...MediaSessionService` on the main
+// window (see `additionalBrowserArgs` in tauri.conf.json).
 //
 // souvlaki's `MediaControls` is COM-backed on Windows: it is neither `Send` nor
 // `Sync`, and its calls must run on the thread that owns the window (the main

@@ -1,10 +1,8 @@
-# Builds the desktop installers and publishes a draft GitHub Release
+# Builds Windows, Linux, and a universal macOS installer, then publishes a
+# single draft GitHub Release
 # whenever a `v*` tag is pushed. Publish flow:
 #   git tag v0.1.0 && git push origin v0.1.0
 # → wait for this workflow → review the draft on the Releases page → publish.
-#
-# Windows produces the NSIS installer; Linux produces .deb, .rpm and an
-# AppImage (see src-tauri/tauri.linux.conf.json for the bundle targets).
 #
 # The TAURI_SIGNING_* secrets are for tauri-plugin-updater artifact
 # signatures (latest.json + .sig). Until the updater is wired up and the
@@ -19,36 +17,47 @@ on:
 
 jobs:
   build:
+    name: Build (${{ matrix.name }})
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
+          - name: Windows
+            os: windows-latest
             args: ""
-          - platform: ubuntu-22.04
+            rust_targets: ""
+          - name: macOS Universal
+            os: macos-latest
+            args: "--target universal-apple-darwin"
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - name: Linux
+            os: ubuntu-22.04
             args: ""
-    runs-on: ${{ matrix.platform }}
+            rust_targets: ""
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
+            libdbus-1-dev \
             patchelf \
-            libgtk-3-dev \
-            libdbus-1-dev
+            libgtk-3-dev
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -58,6 +67,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Optional Developer ID signing + notarization. Without these, the
+          # macOS overlay falls back to an ad-hoc signature so Apple Silicon
+          # can run the build after the user approves it in Privacy & Security.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Baked into the build by src-tauri/build.rs. Add these as repo
+          # Actions secrets. If unset, the released build just ships with
+          # scrobbling disabled and nothing else breaks.
+          YTUBIC_LASTFM_API_KEY: ${{ secrets.YTUBIC_LASTFM_API_KEY }}
+          YTUBIC_LASTFM_API_SECRET: ${{ secrets.YTUBIC_LASTFM_API_SECRET }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "YTubic ${{ github.ref_name }}"
@@ -65,82 +88,3 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-
-  # The bundler names its output per-packager (`_x64-setup.exe`, `_amd64.deb`,
-  # `-1.x86_64.rpm`), which doesn't tell a visitor which file is for which OS.
-  # Rename every asset to `YTubic_<version>_<OS>_<arch>.<ext>` once all three
-  # builds have uploaded. `latest.json` points at the assets by URL, so it is
-  # rewritten in the same step — the minisign signatures cover file contents,
-  # not names, so they stay valid. Runs after `build` so the manifest is final.
-  rename-assets:
-    name: Clarify asset names
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Rename assets and repoint the updater manifest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          version="${TAG#v}"
-
-          # Draft releases are not reachable through /releases/tags/<tag>.
-          release_id=$(gh api "repos/$REPO/releases" --paginate \
-            --jq "[.[] | select(.tag_name==\"$TAG\")][0].id")
-          if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
-            echo "No release found for $TAG" >&2
-            exit 1
-          fi
-
-          : > renames.sed
-          gh api "repos/$REPO/releases/$release_id/assets" --paginate \
-            --jq '.[] | "\(.id) \(.name)"' > assets.txt
-
-          while read -r id name; do
-            case "$name" in
-              latest.json)                 continue ;;
-              *-setup.exe)                 new="YTubic_${version}_Windows_x64_Setup.exe" ;;
-              *-setup.exe.sig)             new="YTubic_${version}_Windows_x64_Setup.exe.sig" ;;
-              *.app.tar.gz)                new="YTubic_${version}_macOS_Universal.app.tar.gz" ;;
-              *.app.tar.gz.sig)            new="YTubic_${version}_macOS_Universal.app.tar.gz.sig" ;;
-              *.dmg)                       new="YTubic_${version}_macOS_Universal.dmg" ;;
-              *.AppImage)                  new="YTubic_${version}_Linux_x86_64.AppImage" ;;
-              *.AppImage.sig)              new="YTubic_${version}_Linux_x86_64.AppImage.sig" ;;
-              *.deb)                       new="YTubic_${version}_Linux_x86_64.deb" ;;
-              *.deb.sig)                   new="YTubic_${version}_Linux_x86_64.deb.sig" ;;
-              *.rpm)                       new="YTubic_${version}_Linux_x86_64.rpm" ;;
-              *.rpm.sig)                   new="YTubic_${version}_Linux_x86_64.rpm.sig" ;;
-              *)                           echo "skipping unrecognized asset: $name"; continue ;;
-            esac
-            # `[ ... ] && continue` would abort the whole step under `set -e`
-            # on every already-correct asset, so branch explicitly.
-            if [ "$name" = "$new" ]; then
-              continue
-            fi
-            gh api --method PATCH "repos/$REPO/releases/assets/$id" \
-              -f "name=$new" --jq '.name' < /dev/null
-            echo "s|$name|$new|g" >> renames.sed
-          done < assets.txt
-
-          manifest_id=$(gh api "repos/$REPO/releases/$release_id/assets" --paginate \
-            --jq '[.[] | select(.name=="latest.json")][0].id')
-          if [ -z "$manifest_id" ] || [ "$manifest_id" = "null" ]; then
-            echo "No latest.json in this release; nothing to repoint."
-            exit 0
-          fi
-          if [ ! -s renames.sed ]; then
-            echo "Assets were already named correctly."
-            exit 0
-          fi
-
-          gh api -H "Accept: application/octet-stream" \
-            "repos/$REPO/releases/assets/$manifest_id" > latest.json
-          sed -i -f renames.sed latest.json
-          gh release upload "$TAG" latest.json --clobber -R "$REPO"
-
-          echo "Updated manifest URLs:"
-          grep -o '"url": "[^"]*"' latest.json | sort -u

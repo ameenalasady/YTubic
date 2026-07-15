@@ -55,20 +55,18 @@ tauri-plugin-process = "2.3.1"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
-# OS media controls: on Windows this is the System Media Transport Controls
-# (the media tile in Quick Settings / the volume flyout, the lock screen, and
-# the hardware media keys); on Linux it's an MPRIS session (desktop widgets,
-# media keys). We create it ourselves from the host process so it resolves to
-# YTubic's own identity — the webview's built-in media session can't, because
-# on Windows it belongs to the msedgewebview2.exe child process and shows up
-# as "Unknown app", and WebKitGTK doesn't bridge its media session to MPRIS at
-# all. See src/media.rs.
+# Native media controls: SMTC on Windows, MPRIS on Linux, and Now Playing on
+# macOS. We create the Windows SMTC from the host process so the tile resolves
+# to YTubic's identity instead of the msedgewebview2.exe child. See media.rs.
 souvlaki = "0.7"
-# Discord Rich Presence: broadcasts the current track to the user's Discord
-# profile over Discord's local IPC socket. Entirely opt-in and configured
-# from Settings → Integrations (client ID + which fields to share). See
-# src/discord.rs.
+# Discord Rich Presence: talks to the local Discord client over its IPC
+# socket / named pipe (no native deps beyond that). Off by default; opt-in
+# from Settings. See src/discord.rs. Set YTUBIC_DISCORD_APP_ID at build time
+# (or edit APP_ID) to the Application ID of a Discord app named "YTubic".
 discord-rich-presence = "1.1.0"
+# MD5 for Last.fm request signing (api_sig = md5 of sorted params + secret).
+# Tiny, single-purpose crate. See src/lastfm.rs.
+md5 = "0.7"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
@@ -80,19 +78,17 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_Shell",
 ] }
 
-# Linux (and other non-Windows) secure cookie storage: the cookie blob is
-# encrypted with AES-256-GCM and the random master key is kept in the
-# platform Secret Service (libsecret / gnome-keyring / kwallet) via `keyring`.
-[target.'cfg(not(windows))'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+# Cookie jars remain files in app data, but their random AES key lives in the
+# native credential store: Secret Service on Linux and Keychain on macOS.
 aes-gcm = "0.10"
+keyring = "4.1.5"
 rand = "0.8"
-base64 = "0.22"
 
-# Linux-only: reach the underlying WebKitGTK WebView to flip settings wry
-# doesn't expose (smooth scrolling). Pinned to the same version wry already
-# pulls in so `PlatformWebview::inner()` hands back a matching type.
 [target.'cfg(target_os = "linux")'.dependencies]
+# Reach the underlying WebKitGTK WebView for Linux-only settings that wry
+# does not expose. Keep this pinned to the version already used by wry so
+# `PlatformWebview::inner()` returns the same type.
 webkit2gtk = "=2.0.2"
 
 [dev-dependencies]
@@ -105,4 +101,3 @@ codegen-units = 1
 opt-level = 3
 panic = "abort"
 strip = true
-
