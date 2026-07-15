@@ -5,7 +5,7 @@
 <h1 align="center">YTubic</h1>
 
 <p align="center">
-  A fast, responsive YouTube Music desktop client for Windows.
+  A fast, responsive YouTube Music desktop client for Windows and Linux.
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@ Built as a reaction to the sluggish webview-wrapper experience — YTubic talks 
 - **Synced lyrics** — line-by-line synced lyrics from multiple providers (LRCLIB, Musixmatch, Genius)
 - **Hi-res cover art** — upgrades album covers to high-resolution studio art when available
 - **Full library support** — your playlists, likes, albums and artists; search with filters; radio/autoplay queues
-- **Windows integration** — media keys, System Media Transport Controls, tray icon, single instance
+- **Desktop integration** — media keys and system media controls, tray icon, single instance
 - **Auto-updates** — the app updates itself from GitHub Releases, and keeps its yt-dlp copy fresh automatically
 
 > **Disclaimer:** YTubic is an unofficial client. It is not affiliated with,
@@ -43,7 +43,11 @@ Built as a reaction to the sluggish webview-wrapper experience — YTubic talks 
 
 Download the latest installer from the [Releases](../../releases) page and run it.
 
-- **Windows 10/11 only** for now.
+- **Windows 10/11:** run the `.exe` NSIS installer.
+- **Linux (experimental):** install the `.deb` or `.rpm`, or run the
+  `.AppImage`. Playback requires WebKitGTK 4.1, GTK 3 and the GStreamer base,
+  good and libav plugins. Signing in also requires a desktop Secret Service
+  provider such as GNOME Keyring or a compatible KWallet setup.
 - On first launch the app downloads its own copy of yt-dlp (~12 MB) into its
   data folder and keeps it updated automatically.
 - Signing in is optional: browse and playback work anonymously; sign in to get
