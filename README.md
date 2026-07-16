@@ -33,8 +33,10 @@ This is a fork of [NUber-dev/YTubic](https://github.com/NUber-dev/YTubic). On to
 - **Playback persistence** — resumes your last track at its saved playhead, and restores scroll position and the last-visited page on launch
 - **Persistent track cache** — cached tracks survive restarts, with real titles/artwork and a search box, bounded to a size limit
 - **Customizable layout** — resizable sidebar and side panel, home page section reordering, pin/hide playlists from the sidebar
+- **Full library sidebar** — automatically lists all your saved/created playlists alongside Liked Songs, not just manually pinned ones
 - **Clickable artist/album links** — jump to an artist or album from any card or the player
 - **Cover art lightbox** — click any cover to view it full-size
+- **Full album release dates** — shows the complete release date when YouTube provides one, not just the year
 - **Artist page shuffle** — shuffle an artist's entire catalogue, re-rolled and randomized each time
 - **Other quality-of-life fixes** — global lyrics on/off toggle, age-restricted track playback, home page refresh button, and various UI polish and performance improvements
 
