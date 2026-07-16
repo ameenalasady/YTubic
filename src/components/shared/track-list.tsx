@@ -23,6 +23,12 @@ type Props = {
    *  where YT doesn't ship duration in the shelf payload but does
    *  ship a play count. */
   showPlays?: boolean;
+  /**
+   * Route id of the owner-editable playlist being rendered, if any.
+   * Passed through to each row's menu so it can offer "Remove from
+   * playlist" — only leave this set for playlists the user can edit.
+   */
+  playlistId?: string;
   className?: string;
 };
 
@@ -88,6 +94,7 @@ export function TrackList({
   hideThumbnails = false,
   hideAlbum = false,
   showPlays = false,
+  playlistId,
   className,
 }: Props) {
   const active = usePlaybackStore(currentTrack);
@@ -231,6 +238,7 @@ export function TrackList({
                 hideThumbnails={hideThumbnails}
                 showAlbum={showAlbum}
                 showPlays={showPlays}
+                playlistId={playlistId}
                 isActive={active?.videoId === t.id}
                 playing={playing}
                 videoSourceSelected={sourcePrefs[t.id]?.selected === "video"}
@@ -251,6 +259,7 @@ type RowProps = {
   hideThumbnails: boolean;
   showAlbum: boolean;
   showPlays: boolean;
+  playlistId?: string;
   isActive: boolean;
   playing: boolean;
   videoSourceSelected: boolean;
@@ -264,6 +273,7 @@ function TrackRow({
   hideThumbnails,
   showAlbum,
   showPlays,
+  playlistId,
   isActive,
   playing,
   videoSourceSelected,
@@ -409,13 +419,13 @@ function TrackRow({
 
       <div className="flex shrink-0 items-center justify-end">
         <LikeDislikeButtons videoId={t.id} meta={t} compact hideUnlessLiked />
-        <TrackMoreMenu item={t} context={{ tracks, index: idx }} />
+        <TrackMoreMenu item={t} context={{ tracks, index: idx, playlistId }} />
       </div>
     </li>
   );
 
   return (
-    <TrackContextMenu item={t} context={{ tracks, index: idx }}>
+    <TrackContextMenu item={t} context={{ tracks, index: idx, playlistId }}>
       {row}
     </TrackContextMenu>
   );

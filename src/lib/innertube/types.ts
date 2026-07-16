@@ -32,6 +32,13 @@ export type ShelfItem = {
   playCount?: string;
   /** Pre-formatted "added to playlist" date. User-owned editable playlists. */
   dateAdded?: string;
+  /**
+   * Per-entry id YT Music assigns a track within a specific playlist
+   * (distinct from the track's own videoId). Only present on rows from
+   * an owner-editable playlist; required alongside the videoId to call
+   * `browse/edit_playlist`'s ACTION_REMOVE_VIDEO.
+   */
+  setVideoId?: string;
   /** Round (true for artists) */
   round?: boolean;
   /**

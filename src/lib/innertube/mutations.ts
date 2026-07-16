@@ -152,6 +152,33 @@ export async function addToPlaylist(
 }
 
 /**
+ * Remove a single entry from a user-owned playlist. Unlike adding, this
+ * requires the entry's `setVideoId` (not just the videoId) — YT Music
+ * needs it to disambiguate which occurrence to drop when the same track
+ * appears in the playlist more than once.
+ */
+export async function removeFromPlaylist(
+  playlistId: string,
+  videoId: string,
+  setVideoId: string,
+): Promise<void> {
+  const json = await innertubePost("browse/edit_playlist", {
+    playlistId,
+    actions: [
+      {
+        action: "ACTION_REMOVE_VIDEO",
+        removedVideoId: videoId,
+        setVideoId,
+      },
+    ],
+  });
+  const status = json?.status as string | undefined;
+  if (status && status !== "STATUS_SUCCEEDED") {
+    throw new Error(`edit_playlist failed: ${status}`);
+  }
+}
+
+/**
  * Create a brand-new private playlist containing the given track as
  * its first entry. Returns the new playlistId so callers can navigate
  * or show it in toasts.

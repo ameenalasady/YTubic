@@ -776,6 +776,10 @@ export function mapResponsiveListItem(raw: YtNode): ShelfItem | null {
     raw.playlistItemData?.videoId ??
     raw.navigationEndpoint?.watchEndpoint?.videoId;
 
+  // Only present on rows from an owner-editable playlist; needed to
+  // remove this exact entry via `browse/edit_playlist`.
+  const setVideoId: string | undefined = raw.playlistItemData?.playlistSetVideoId;
+
   // YT Music sometimes ships rows without a music-style thumbnail (more
   // common on user-created playlists than on Liked Songs). Every public
   // video has a generated `i.ytimg.com/vi/{id}/...jpg` set, so we
@@ -826,6 +830,7 @@ export function mapResponsiveListItem(raw: YtNode): ShelfItem | null {
       explicit: explicit || undefined,
       playCount,
       dateAdded,
+      setVideoId,
     };
   }
 

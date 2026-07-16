@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ListPlusIcon,
   ListEndIcon,
+  ListXIcon,
   RadioIcon,
   UserIcon,
   DiscAlbumIcon,
@@ -62,14 +63,26 @@ import {
   dislikeTrack,
   fetchUserPlaylists,
   likeTrack,
+  removeFromPlaylist,
   removeRating,
   type UserPlaylist,
 } from "@/lib/innertube/mutations";
+import type { PlaylistFirstPage, PlaylistNextPage } from "@/lib/innertube/playlist";
 import { syncLastfmLove } from "@/lib/lastfm/love";
 import { usePlaybackStore } from "@/lib/store/playback";
 import type { ShelfItem } from "@/lib/innertube/types";
 
-type TrackContext = { tracks: ShelfItem[]; index: number };
+type TrackContext = {
+  tracks: ShelfItem[];
+  index: number;
+  /**
+   * Route id of the owner-editable playlist this row is rendered in
+   * (matches the ["playlist-pages", playlistId] query key). Enables the
+   * "Remove from playlist" menu item — only meaningful together with a
+   * `setVideoId` on the track itself.
+   */
+  playlistId?: string;
+};
 
 type Primitives = {
   Item: ComponentType<any>;
@@ -226,6 +239,7 @@ export function TrackMenuItems({
   onGoToArtist?: (artistId: string) => void;
 }) {
   const store = usePlaybackStore.getState;
+  const qc = useQueryClient();
   const { Item, Separator, Sub, SubTrigger, SubContent } = primitives;
   const {
     isLiked,
@@ -240,6 +254,35 @@ export function TrackMenuItems({
 
   const artist = item.artists?.find((a) => !!a.id);
   const albumBrowseId = undefined;
+
+  const canRemoveFromPlaylist = !!(context?.playlistId && item.setVideoId);
+  const runRemoveFromPlaylist = async () => {
+    if (!context?.playlistId || !item.setVideoId) return;
+    const routePlaylistId = context.playlistId;
+    const rawPlaylistId = routePlaylistId.startsWith("VL")
+      ? routePlaylistId.slice(2)
+      : routePlaylistId;
+    try {
+      await removeFromPlaylist(rawPlaylistId, item.id, item.setVideoId);
+      const setVideoId = item.setVideoId;
+      qc.setQueryData<{
+        pages: (PlaylistFirstPage | PlaylistNextPage)[];
+        pageParams: unknown[];
+      }>(["playlist-pages", routePlaylistId], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((p) => ({
+            ...p,
+            tracks: p.tracks.filter((t) => t.setVideoId !== setVideoId),
+          })),
+        };
+      });
+      toast.success("Removed from playlist");
+    } catch (e) {
+      toast.error(`Remove failed: ${String(e)}`);
+    }
+  };
 
   return (
     <>
@@ -292,6 +335,13 @@ export function TrackMenuItems({
         <ThumbsDownIcon />
         Not interested
       </Item>
+
+      {canRemoveFromPlaylist && (
+        <Item onSelect={runRemoveFromPlaylist} variant="destructive">
+          <ListXIcon />
+          Remove from playlist
+        </Item>
+      )}
 
       <Sub>
         <SubTrigger
