@@ -26,6 +26,7 @@ Built as a reaction to the sluggish webview-wrapper experience — YTubic talks 
 
 This is a fork of [NUber-dev/YTubic](https://github.com/NUber-dev/YTubic). On top of the original, it adds:
 
+- **No Premium gating** — drops upstream's YouTube Music Premium playback gate; streaming and caching are free for every account (the premium store is kept only for the sidebar's informational tier badge)
 - **Linux support** — native build with MPRIS media controls and Secret Service-encrypted cookie storage
 - **Discord Rich Presence** — shows what you're listening to on Discord
 - **Last.fm integration** — scrobbling, now-playing status, loved-tracks sync, and an account card
