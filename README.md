@@ -22,6 +22,21 @@ Built as a reaction to the sluggish webview-wrapper experience — YTubic talks 
 
 ![YTubic — artist page with the player and synced lyrics](assets/screenshots/artist-page.jpg)
 
+## What this fork adds
+
+This is a fork of [NUber-dev/YTubic](https://github.com/NUber-dev/YTubic). On top of the original, it adds:
+
+- **Linux support** — native build with MPRIS media controls and Secret Service-encrypted cookie storage
+- **Discord Rich Presence** — shows what you're listening to on Discord
+- **Last.fm integration** — scrobbling, now-playing status, loved-tracks sync, and an account card
+- **Playback persistence** — resumes your last track at its saved playhead, and restores scroll position and the last-visited page on launch
+- **Persistent track cache** — cached tracks survive restarts, with real titles/artwork and a search box, bounded to a size limit
+- **Customizable layout** — resizable sidebar and side panel, home page section reordering, pin/hide playlists from the sidebar
+- **Clickable artist/album links** — jump to an artist or album from any card or the player
+- **Cover art lightbox** — click any cover to view it full-size
+- **Artist page shuffle** — shuffle an artist's entire catalogue, re-rolled and randomized each time
+- **Other quality-of-life fixes** — global lyrics on/off toggle, age-restricted track playback, home page refresh button, and various UI polish and performance improvements
+
 ## Features
 
 - **Fast and responsive UI** — instant navigation with prefetch and aggressive caching; no page reloads, no spinners on every click
