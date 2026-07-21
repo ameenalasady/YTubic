@@ -18,11 +18,21 @@ body:
       placeholder: "0.1.0"
     validations:
       required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux (beta)
+        - macOS (beta)
+    validations:
+      required: true
   - type: input
     id: os
     attributes:
-      label: Windows version
-      placeholder: "Windows 11 24H2"
+      label: OS version / distro
+      placeholder: "Windows 11 24H2 / Ubuntu 24.04 / macOS 15.5"
   - type: dropdown
     id: signed-in
     attributes:

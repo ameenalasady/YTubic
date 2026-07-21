@@ -1,0 +1,3 @@
+# Keep blank issues enabled: the in-app "Report an issue" dialog opens
+# /issues/new with a prefilled body, which relies on the blank form.
+blank_issues_enabled: true
