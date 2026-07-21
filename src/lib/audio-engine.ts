@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { fetchRadio, fetchShuffleContinuation } from "@/lib/innertube/radio";
+import {
+  fetchRadio,
+  fetchShuffleContinuation,
+  fetchWatchQueueContinuation,
+} from "@/lib/innertube/radio";
 import { prefetchStream, streamUrlFor } from "@/lib/stream";
 import { usePlaybackStore, type QueueTrack } from "@/lib/store/playback";
 import {
@@ -519,6 +523,43 @@ export function useAudioEngine() {
         stationFetchingRef.current = undefined;
       });
   }, [stationContinuation, qIndex, qLen]);
+
+  // Drain a pending server-side shuffle continuation: when playback nears
+  // the tail of the queue, pull the next ~50 tracks of the permutation and
+  // append them. Deduped against the queue — once the permutation is
+  // exhausted YTM starts repeating tracks, which is the signal to stop.
+  const queueContinuation = usePlaybackStore((s) => s.queueContinuation);
+  const continuationFetchingRef = useRef(false);
+  useEffect(() => {
+    if (!queueContinuation) return;
+    if (qIndex < 0 || qLen === 0) return;
+    // Only fetch once the playhead is close to the tail, so a freshly
+    // built 50-track queue doesn't immediately drain its whole source.
+    if (qLen - 1 - qIndex > 5) return;
+    if (continuationFetchingRef.current) return;
+    continuationFetchingRef.current = true;
+    const token = queueContinuation;
+    fetchWatchQueueContinuation(token)
+      .then((page) => {
+        const s = usePlaybackStore.getState();
+        if (s.queueContinuation !== token) return;
+        const existing = new Set(s.queue.map((t) => t.videoId));
+        const fresh = page.tracks.filter((t) => !existing.has(t.id));
+        if (fresh.length) {
+          s.appendToQueue(fresh);
+          s.setQueueContinuation(page.continuationToken);
+        } else {
+          // Permutation exhausted — stop extending.
+          s.setQueueContinuation(undefined);
+        }
+      })
+      .catch(() => {
+        continuationFetchingRef.current = false;
+      })
+      .finally(() => {
+        continuationFetchingRef.current = false;
+      });
+  }, [queueContinuation, qIndex, qLen]);
 
   const radioFetchedForRef = useRef<string | undefined>(undefined);
   useEffect(() => {

@@ -107,3 +107,39 @@ describe("playback next()", () => {
     expect(usePlaybackStore.getState().index).toBe(-1);
   });
 });
+
+// A pending server-side shuffle continuation belongs to the queue it was
+// created with — any action that replaces the queue must drop it, or the
+// audio engine would append the OLD playlist's shuffle tail onto whatever
+// the user played next.
+describe("queueContinuation lifecycle", () => {
+  beforeEach(() => setup({}));
+
+  it("survives appends but is cleared when the queue is replaced", () => {
+    setup({ queue: [track("a")], index: 0, queueContinuation: "tok1" });
+    const s = usePlaybackStore.getState();
+    s.appendToQueue([track("b")]);
+    expect(usePlaybackStore.getState().queueContinuation).toBe("tok1");
+    s.setQueue([track("c")], 0);
+    expect(usePlaybackStore.getState().queueContinuation).toBeUndefined();
+  });
+
+  it("is cleared by playNow", () => {
+    setup({ queue: [track("a")], index: 0, queueContinuation: "tok1" });
+    usePlaybackStore.getState().playNow(track("b"));
+    expect(usePlaybackStore.getState().queueContinuation).toBeUndefined();
+  });
+
+  it("is cleared by clearQueue", () => {
+    setup({ queue: [track("a")], index: 0, queueContinuation: "tok1" });
+    usePlaybackStore.getState().clearQueue();
+    expect(usePlaybackStore.getState().queueContinuation).toBeUndefined();
+  });
+
+  it("setQueueContinuation sets and clears the token", () => {
+    usePlaybackStore.getState().setQueueContinuation("tok2");
+    expect(usePlaybackStore.getState().queueContinuation).toBe("tok2");
+    usePlaybackStore.getState().setQueueContinuation(undefined);
+    expect(usePlaybackStore.getState().queueContinuation).toBeUndefined();
+  });
+});
