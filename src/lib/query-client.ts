@@ -24,6 +24,14 @@ export const queryClient = new QueryClient({
  * resetting on relaunch. IndexedDB has a much larger, disk-backed quota,
  * so moving this here frees localStorage for everything else.
  */
+
+// DevTools escape hatch: console `import()` of this module gets a SEPARATE
+// vite module instance (HMR `?t=` stamps), so the only way to poke the live
+// cache from the console is through a window global.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__qc = queryClient;
+}
+
 const idbStore =
   typeof window !== "undefined"
     ? createStore("ytubic-cache", "query-cache")

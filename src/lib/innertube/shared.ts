@@ -310,6 +310,17 @@ export function rawBrowseContinuation(token: string): Promise<YtNode> {
 }
 
 /**
+ * Reload continuations are the "load more" / refresh action the
+ * playlist Suggestions shelf uses for its refresh action. Unlike next-
+ * continuations these are sent as query params, matching the web client
+ * (`?ctoken=…&continuation=…&type=next`); in the body they're ignored.
+ */
+export function rawBrowseReloadContinuation(token: string): Promise<YtNode> {
+  const t = encodeURIComponent(token);
+  return innertubePost(`browse?ctoken=${t}&continuation=${t}&type=next`, {});
+}
+
+/**
  * Walk an InnerTube response for a continuation token. Returns the
  * first one found — playlists typically have a single continuation
  * pointer near the tracks shelf; other tokens (sidebar feeds, etc.)
