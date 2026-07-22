@@ -201,15 +201,29 @@ function collectTracks(resp: YtNode, seenIds: Set<string>): ShelfItem[] {
   return out;
 }
 
+/**
+ * Collect suggestion song rows from any subtree, deduped by videoId.
+ * The suggestions envelope ships every row TWICE (two distinct renderer
+ * nodes per song — verified live 2026-07-23: 14 nodes, 7 unique songs),
+ * so identity-based walking alone would double every entry.
+ */
+function collectSuggestionTracks(root: YtNode): ShelfItem[] {
+  const tracks: ShelfItem[] = [];
+  const seen = new Set<string>();
+  for (const row of collectResponsiveRows(root)) {
+    const mapped = mapResponsiveListItem(row);
+    if (mapped && mapped.kind === "song" && !seen.has(mapped.id)) {
+      seen.add(mapped.id);
+      tracks.push(mapped);
+    }
+  }
+  return tracks;
+}
+
 /** Rows + reload token from a suggestions shelf (renderer or continuation). */
 function parseSuggestionsShelf(shelf: YtNode): PlaylistSuggestions {
-  const tracks: ShelfItem[] = [];
-  for (const row of collectResponsiveRows(shelf.contents ?? [])) {
-    const mapped = mapResponsiveListItem(row);
-    if (mapped && mapped.kind === "song") tracks.push(mapped);
-  }
   return {
-    tracks,
+    tracks: collectSuggestionTracks(shelf.contents ?? []),
     refreshToken:
       shelf.continuations?.[0]?.reloadContinuationData?.continuation,
   };
@@ -246,25 +260,23 @@ export function extractSuggestions(
   return result;
 }
 
+/** Parse whatever continuation envelope the suggestions request answered
+ *  with: `musicShelfContinuation` (classic), `sectionListContinuation`
+ *  (current two-column layout), or `onResponseReceivedActions`. */
+function parseSuggestionsResponse(json: YtNode): PlaylistSuggestions {
+  const shelf = json?.continuationContents?.musicShelfContinuation;
+  if (shelf) return parseSuggestionsShelf(shelf);
+  return {
+    tracks: collectSuggestionTracks(json),
+    refreshToken: findFirstByKey(json, "reloadContinuationData")?.continuation,
+  };
+}
+
 /** Fetch a fresh batch of suggestions via the shelf's reload token. */
 export async function fetchPlaylistSuggestions(
   token: string,
 ): Promise<PlaylistSuggestions> {
-  const json = await rawBrowseReloadContinuation(token);
-  const shelf = json?.continuationContents?.musicShelfContinuation;
-  if (shelf) return parseSuggestionsShelf(shelf);
-  // Newer layouts answer continuations with onResponseReceivedActions
-  // instead of continuationContents — sweep rows and the new reload
-  // token from the whole envelope.
-  const tracks: ShelfItem[] = [];
-  for (const row of collectResponsiveRows(json)) {
-    const mapped = mapResponsiveListItem(row);
-    if (mapped && mapped.kind === "song") tracks.push(mapped);
-  }
-  return {
-    tracks,
-    refreshToken: findFirstByKey(json, "reloadContinuationData")?.continuation,
-  };
+  return parseSuggestionsResponse(await rawBrowseReloadContinuation(token));
 }
 
 /**
@@ -309,12 +321,37 @@ export async function fetchPlaylistFirstPage(
   // playlists append a "Suggestions" musicShelfRenderer to the same
   // section list — walking the whole response used to sweep those
   // suggested rows into the playlist as if they were members.
+  const isEditable = detectEditable(json);
   const playlistShelf = findFirstByKey(json, "musicPlaylistShelfRenderer");
   const trackScope = playlistShelf ?? json;
   const seenIds = new Set<string>();
   let tracks = collectTracks(trackScope, seenIds);
   let continuationToken = findContinuationToken(trackScope);
   let suggestions = extractSuggestions(json);
+  if (!suggestions && playlistShelf && isEditable) {
+    // Current two-column layout: the browse response has NO suggestions
+    // inline. The section list carries a `nextContinuationData` token
+    // OUTSIDE the playlist shelf (the shelf's own paging token is a
+    // `continuationCommand`); following it returns a
+    // `sectionListContinuation` with the Suggestions rows and their
+    // reload token. Verified live 2026-07-23. One extra request, paid
+    // only on playlists the user owns.
+    const outer = findFirstByKey(json, "nextContinuationData")?.continuation as
+      | string
+      | undefined;
+    if (outer && outer !== continuationToken) {
+      try {
+        const fetched = parseSuggestionsResponse(
+          await rawBrowseContinuation(outer),
+        );
+        if (fetched.tracks.length > 0) suggestions = fetched;
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          console.debug("[playlist] suggestions fetch failed:", e);
+        }
+      }
+    }
+  }
   if (!suggestions && playlistShelf) {
     // Suggestions shelf in a shape we don't recognize: whatever song rows
     // sit OUTSIDE the playlist shelf are suggestion rows (the playlist's
@@ -369,7 +406,7 @@ export async function fetchPlaylistFirstPage(
     tracks,
     continuationToken,
     shuffle,
-    isEditable: detectEditable(json),
+    isEditable,
     suggestions,
   };
 }
