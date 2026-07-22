@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   AlertCircleIcon,
@@ -8,21 +8,26 @@ import {
   Loader2Icon,
   PinIcon,
   PinOffIcon,
+  RefreshCwIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   fetchPlaylistContinuation,
   fetchPlaylistFirstPage,
+  fetchPlaylistSuggestions,
   type PlaylistFirstPage,
   type PlaylistNextPage,
+  type PlaylistSuggestions,
 } from "@/lib/innertube/playlist";
+import { fetchShuffleQueue } from "@/lib/innertube/radio";
 import type { ShelfItem } from "@/lib/innertube/types";
 import { EntityHeader } from "@/components/shared/entity-header";
+import { ExpandableText } from "@/components/shared/expandable-text";
 import { TrackList } from "@/components/shared/track-list";
 import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -44,14 +49,32 @@ import {
 
 export const Route = createFileRoute("/playlist/$id")({
   component: PlaylistPageView,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    view?: string;
+    t?: string;
+    a?: string;
+    aid?: string;
+    img?: string;
+    from?: string;
+  } => ({
+    view: typeof search.view === "string" ? search.view : undefined,
+    t: typeof search.t === "string" ? search.t : undefined,
+    a: typeof search.a === "string" ? search.a : undefined,
+    aid: typeof search.aid === "string" ? search.aid : undefined,
+    img: typeof search.img === "string" ? search.img : undefined,
+    from: typeof search.from === "string" ? search.from : undefined,
+  }),
 });
 
 type AnyPage = PlaylistFirstPage | PlaylistNextPage;
 
-const EAGER_LOAD_PAGE_LIMIT = 5;
-
 function PlaylistPageView() {
   const { id } = Route.useParams();
+  const { view, t, a, aid, img, from } = Route.useSearch();
+  const isArtistTopSongs = view === "top-songs";
+  const openedFromArtist = from === "artist";
 
   const query = useInfiniteQuery<AnyPage, Error>({
     queryKey: ["playlist-pages", id],
@@ -76,14 +99,48 @@ function PlaylistPageView() {
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const pages = useMemo(() => query.data?.pages ?? [], [query.data?.pages]);
+  const pages = query.data?.pages ?? [];
   const header = pages[0] as PlaylistFirstPage | undefined;
-  const eagerLoadPageCountRef = useRef(0);
-  const fetchNextPage = query.fetchNextPage;
+
+  // Suggestions live in local state (seeded from the first page) so the
+  // Refresh button can swap in a new batch without touching the
+  // infinite-query cache of the playlist itself.
+  const [suggestions, setSuggestions] = useState<
+    PlaylistSuggestions | undefined
+  >(undefined);
+  const [suggestionsBusy, setSuggestionsBusy] = useState(false);
+  const headerSuggestions = header?.suggestions;
+  useEffect(() => {
+    setSuggestions(headerSuggestions);
+  }, [headerSuggestions]);
+
+  const refreshSuggestions = async () => {
+    const token = suggestions?.refreshToken;
+    if (!token || suggestionsBusy) return;
+    setSuggestionsBusy(true);
+    try {
+      const next = await fetchPlaylistSuggestions(token);
+      if (next.tracks.length > 0) {
+        // Keep the old token if the new batch didn't carry one, so the
+        // button stays usable.
+        setSuggestions({
+          tracks: next.tracks,
+          refreshToken: next.refreshToken ?? token,
+        });
+      }
+    } catch (e) {
+      toast.error(`Couldn't refresh suggestions: ${String(e)}`);
+    } finally {
+      setSuggestionsBusy(false);
+    }
+  };
   const tracks = useMemo(() => pages.flatMap((p) => p.tracks), [pages]);
   const sortedTracks = useMemo(
-    () => sortTracks(tracks, sortMode),
-    [tracks, sortMode],
+    () =>
+      isArtistTopSongs
+        ? sortTracksByPlayCount(tracks)
+        : sortTracks(tracks, sortMode),
+    [isArtistTopSongs, tracks, sortMode],
   );
   const visibleTracks = useMemo(() => {
     if (!normalizedQuery) return sortedTracks;
@@ -116,7 +173,7 @@ function PlaylistPageView() {
       (entries) => {
         for (const e of entries) {
           if (e.isIntersecting && !query.isFetchingNextPage) {
-            fetchNextPage();
+            query.fetchNextPage();
           }
         }
       },
@@ -124,7 +181,12 @@ function PlaylistPageView() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [query.hasNextPage, query.isFetchingNextPage, fetchNextPage, query.error]);
+  }, [
+    query.hasNextPage,
+    query.isFetchingNextPage,
+    query.fetchNextPage,
+    query.error,
+  ]);
 
   // When the user picks any non-default sort, eagerly drain all
   // continuations so the sort applies to the whole playlist, not just
@@ -135,27 +197,19 @@ function PlaylistPageView() {
   // pause the effect re-fires immediately on every page success and
   // hammers the InnerTube edge synchronously.
   useEffect(() => {
-    eagerLoadPageCountRef.current = 0;
-  }, [sortMode, normalizedQuery, id]);
-
-  useEffect(() => {
     if (sortMode === "default" && !normalizedQuery) return;
     if (!query.hasNextPage) return;
     if (query.isFetchingNextPage) return;
-    if (eagerLoadPageCountRef.current >= EAGER_LOAD_PAGE_LIMIT) return;
     // Don't keep draining after an error — it would retry every 250 ms.
     if (query.error) return;
-    const t = setTimeout(() => {
-      eagerLoadPageCountRef.current += 1;
-      fetchNextPage();
-    }, 250);
+    const t = setTimeout(() => query.fetchNextPage(), 250);
     return () => clearTimeout(t);
   }, [
     sortMode,
     normalizedQuery,
     query.hasNextPage,
     query.isFetchingNextPage,
-    fetchNextPage,
+    query.fetchNextPage,
     query.error,
   ]);
 
@@ -178,33 +232,101 @@ function PlaylistPageView() {
 
   if (!header) return <PlaylistSkeleton />;
 
+  const shufflePlaylist = async () => {
+    const store = usePlaybackStore.getState();
+    // Prefer YTM's server-side shuffle: one /next call returns a fresh
+    // permutation over the ENTIRE playlist (not just the pages scrolled
+    // into view so far), and the rest of the permutation streams in via
+    // queueContinuation as playback nears the tail.
+    if (header.shuffle) {
+      try {
+        const page = await fetchShuffleQueue(
+          header.shuffle.playlistId,
+          header.shuffle.params,
+        );
+        if (page.tracks.length > 0) {
+          store.playShelfItems(page.tracks, 0);
+          store.setShuffle(true);
+          store.setQueueContinuation(page.continuationToken);
+          return;
+        }
+      } catch {
+        // Fall through to the client-side shuffle over loaded tracks.
+      }
+    }
+    if (tracks.length > 0) {
+      const start = Math.floor(Math.random() * tracks.length);
+      store.playShelfItems(tracks, start);
+      store.setShuffle(true);
+    }
+  };
+
+  // "Remove from playlist" only makes sense on a playlist the user owns.
+  // Liked Songs is excluded: its rows are managed through like/unlike,
+  // and edit_playlist rejects "LM". Artist-view reuses of this route
+  // aren't playlists the user can edit either.
+  const removal =
+    header.isEditable && !isLikedSongs && !isArtistTopSongs && !openedFromArtist
+      ? { playlistId: id.startsWith("VL") ? id.slice(2) : id }
+      : undefined;
+
   const metadataParts = [
     header.owner,
     header.trackCount ? `${header.trackCount} songs` : undefined,
   ].filter(Boolean) as string[];
+  const headerMetadata = isArtistTopSongs
+    ? undefined
+    : metadataParts.join(" • ");
 
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
       <EntityHeader
-        title={header.title}
-        metadata={metadataParts.join(" • ")}
-        description={header.description}
-        thumbnails={header.thumbnails}
-        onPlay={() => {
-          if (tracks.length > 0) {
-            usePlaybackStore.getState().playShelfItems(tracks, 0);
-            usePlaybackStore.getState().setShuffle(false);
-          }
-        }}
-        onShuffle={() => {
-          if (tracks.length > 0) {
-            const start = Math.floor(Math.random() * tracks.length);
-            usePlaybackStore.getState().playShelfItems(tracks, start);
-            usePlaybackStore.getState().setShuffle(true);
-          }
-        }}
+        title={
+          isArtistTopSongs
+            ? t || "Top songs"
+            : openedFromArtist
+              ? t || header.title
+              : header.title
+        }
+        subtitle={
+          isArtistTopSongs || openedFromArtist ? (
+            aid && a ? (
+              <Link
+                to="/artist/$id"
+                params={{ id: aid }}
+                className="hover:text-foreground hover:underline"
+              >
+                {a}
+              </Link>
+            ) : (
+              a
+            )
+          ) : undefined
+        }
+        metadata={openedFromArtist ? undefined : headerMetadata}
+        thumbnails={
+          (isArtistTopSongs || openedFromArtist) && img
+            ? [{ url: img, width: 512, height: 512 }]
+            : header.thumbnails
+        }
+        round={isArtistTopSongs || openedFromArtist}
+        keepSubtitleInCompact={isArtistTopSongs || openedFromArtist}
+        onPlay={
+          openedFromArtist
+            ? undefined
+            : () => {
+                if (tracks.length > 0) {
+                  usePlaybackStore.getState().playShelfItems(tracks, 0);
+                  usePlaybackStore.getState().setShuffle(false);
+                }
+              }
+        }
+        onShuffle={
+          openedFromArtist ? undefined : () => void shufflePlaylist()
+        }
         actions={
-          isLikedSongs ? null : pinned ? (
+          isArtistTopSongs ||
+          openedFromArtist ? null : isLikedSongs ? null : pinned ? (
             <Button variant="outline" onClick={() => unpin(id)}>
               <PinOffIcon />
               Unpin
@@ -226,26 +348,35 @@ function PlaylistPageView() {
             </Button>
           )
         }
+        toolbar={
+          isArtistTopSongs ? (
+            <div className="flex items-center">
+              <SearchInput value={searchQuery} onChange={setSearchQuery} />
+            </div>
+          ) : undefined
+        }
       />
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <SearchInput value={searchQuery} onChange={setSearchQuery} />
-          <SortMenu
-            mode={sortMode}
-            onChange={(m) => setSortMode(id, m)}
-            isLikedSongs={isLikedSongs}
-          />
-        </div>
+      {!isArtistTopSongs && header.description ? (
+        <ExpandableText key={header.description} text={header.description} />
+      ) : null}
+
+      <div className={isArtistTopSongs ? "contents" : "flex flex-col gap-2"}>
+        {!isArtistTopSongs ? (
+          <div className="flex items-center gap-2">
+            <SearchInput value={searchQuery} onChange={setSearchQuery} />
+            <SortMenu
+              mode={sortMode}
+              onChange={(m) => setSortMode(id, m)}
+              isLikedSongs={isLikedSongs}
+            />
+          </div>
+        ) : null}
         {(sortMode !== "default" || normalizedQuery) && query.hasNextPage ? (
           <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            {query.isFetchingNextPage ? (
-              <Loader2Icon className="size-3 animate-spin" />
-            ) : null}
-            {eagerLoadPageCountRef.current >= EAGER_LOAD_PAGE_LIMIT
-              ? "Showing loaded tracks. Scroll to load more."
-              : normalizedQuery
-                ? "Loading more tracks for search…"
-                : "Loading more tracks for sort…"}
+            <Loader2Icon className="size-3 animate-spin" />
+            {normalizedQuery
+              ? "Loading full playlist for search…"
+              : "Loading full playlist for sort…"}
           </span>
         ) : null}
       </div>
@@ -259,7 +390,8 @@ function PlaylistPageView() {
       ) : (
         <TrackList
           tracks={visibleTracks}
-          playlistId={isLikedSongs ? undefined : id}
+          showPlays={isArtistTopSongs}
+          removal={removal}
         />
       )}
 
@@ -278,14 +410,77 @@ function PlaylistPageView() {
           )}
         </div>
       )}
+
+      {/* Suggested additions — YTM only ships this shelf on playlists the
+          user owns. Kept out of the main list (its rows are NOT playlist
+          members) and hidden while a search filter is active. */}
+      {removal && suggestions && suggestions.tracks.length > 0 && !normalizedQuery ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold tracking-tight">
+              Suggestions
+            </h2>
+            {suggestions.refreshToken ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refreshSuggestions()}
+                disabled={suggestionsBusy}
+              >
+                <RefreshCwIcon
+                  className={suggestionsBusy ? "animate-spin" : undefined}
+                />
+                Refresh
+              </Button>
+            ) : null}
+          </div>
+          <TrackList tracks={suggestions.tracks} virtualize={false} />
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function sortTracks(
-  tracks: ShelfItem[],
-  mode: PlaylistSortMode,
-): ShelfItem[] {
+function sortTracksByPlayCount(tracks: ShelfItem[]): ShelfItem[] {
+  if (tracks.length < 2) return tracks;
+  return tracks
+    .map((track, index) => ({ track, index }))
+    .sort((a, b) => {
+      const difference =
+        playCountValue(b.track.playCount) - playCountValue(a.track.playCount);
+      return difference || a.index - b.index;
+    })
+    .map(({ track }) => track);
+}
+
+/** Convert YT's preformatted values such as "108M plays" to a number. */
+function playCountValue(text?: string): number {
+  if (!text) return -1;
+  const match = text
+    .trim()
+    .toUpperCase()
+    .match(/([\d.,]+)\s*([KMB])?/);
+  if (!match) return -1;
+
+  const suffix = match[2];
+  const numericText = suffix
+    ? match[1].replace(",", ".")
+    : match[1].replace(/[^\d]/g, "");
+  const value = Number(numericText);
+  if (!Number.isFinite(value)) return -1;
+
+  const multiplier =
+    suffix === "B"
+      ? 1_000_000_000
+      : suffix === "M"
+        ? 1_000_000
+        : suffix === "K"
+          ? 1_000
+          : 1;
+  return value * multiplier;
+}
+
+function sortTracks(tracks: ShelfItem[], mode: PlaylistSortMode): ShelfItem[] {
   if (mode === "default" || tracks.length < 2) return tracks;
   const copy = tracks.slice();
   switch (mode) {
@@ -303,8 +498,7 @@ function sortTracks(
       copy.sort((a, b) => b.title.localeCompare(a.title));
       break;
     case "artist-asc": {
-      const key = (t: ShelfItem) =>
-        t.artists?.[0]?.name ?? t.subtitle ?? "";
+      const key = (t: ShelfItem) => t.artists?.[0]?.name ?? t.subtitle ?? "";
       copy.sort((a, b) => key(a).localeCompare(key(b)));
       break;
     }
@@ -408,22 +602,20 @@ function SortMenu({
   );
 }
 
-// Mirrors the real hero + TrackList row geometry (see AlbumSkeleton's
-// comment for the reasoning). Playlists don't pass a `subtitle` to
-// EntityHeader (owner + track count are folded into one `metadata`
-// line, no separate artist row), so only one secondary bar follows
-// the title here, unlike Album's two.
 function PlaylistSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-row items-end gap-6">
-        <Skeleton className="size-40 shrink-0 border border-hairline shadow-lg" />
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end">
+        <Skeleton className="aspect-square w-40 md:w-56" />
+        <div className="flex flex-col gap-2">
           <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-4 w-24" />
         </div>
       </div>
-      <TrackRowSkeletonList count={10} />
+      {Array.from({ length: 10 }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-full" />
+      ))}
     </div>
   );
 }

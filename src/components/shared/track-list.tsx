@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PlayIcon, PauseIcon, Volume2Icon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -6,6 +6,7 @@ import { Thumbnail } from "@/components/shared/thumbnail";
 import {
   TrackContextMenu,
   TrackMoreMenu,
+  type PlaylistRemovalContext,
 } from "@/components/shared/track-context-menu";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { cn } from "@/lib/utils";
@@ -23,21 +24,26 @@ type Props = {
    *  where YT doesn't ship duration in the shelf payload but does
    *  ship a play count. */
   showPlays?: boolean;
+  /** Enables "Remove from playlist" on rows; set only by an editable
+   *  (user-owned) playlist page. */
+  removal?: PlaylistRemovalContext;
   /**
-   * Route id of the owner-editable playlist being rendered, if any.
-   * Passed through to each row's menu so it can offer "Remove from
-   * playlist" — only leave this set for playlists the user can edit.
+   * Render all rows directly instead of windowing them. For short
+   * secondary lists (e.g. playlist Suggestions): the virtualizer anchors
+   * to the app scroller with a scrollMargin measured once per
+   * tracks-change, so a list sitting BELOW other growing content (infinite
+   * scroll) would keep a stale offset and window the wrong rows.
    */
-  playlistId?: string;
+  virtualize?: boolean;
   className?: string;
 };
 
-// Estimated height of a single row including the 2px gap below it
-// (p-2 + 40px thumb + roughly 2px gap from `gap-0.5`). The virtualizer
+// Height of a row plus the explicit 2px gap below it
+// (p-2 + 40px thumb + 2px spacing). The virtualizer
 // also measures actual rendered rows via `measureElement`, so a slight
 // mismatch only affects the initial scroll-bar size before measurements
 // settle.
-const ROW_SIZE = 56;
+const ROW_SIZE = 58;
 
 function formatDuration(seconds?: number): string {
   if (!seconds || Number.isNaN(seconds)) return "—";
@@ -94,7 +100,8 @@ export function TrackList({
   hideThumbnails = false,
   hideAlbum = false,
   showPlays = false,
-  playlistId,
+  removal,
+  virtualize = true,
   className,
 }: Props) {
   const active = usePlaybackStore(currentTrack);
@@ -145,15 +152,7 @@ export function TrackList({
     getItemKey: (i) => `${tracks[i].id}:${i}`,
   });
 
-  const showAlbum = useMemo(
-    () => !hideAlbum && tracks.some((t) => t.album),
-    [hideAlbum, tracks],
-  );
-  const activeIndexById = useMemo(() => {
-    const map = new Map<string, number>();
-    tracks.forEach((t, i) => map.set(t.id, i));
-    return map;
-  }, [tracks]);
+  const showAlbum = !hideAlbum && tracks.some((t) => t.album);
 
   // Grid template shared by the header row and every track row so the
   // columns line up in a real "table" layout.
@@ -178,13 +177,39 @@ export function TrackList({
     );
   }
 
+  if (!virtualize) {
+    return (
+      <div className={cn("flex flex-col", className)}>
+        {tracks.map((t, idx) => (
+          <div key={`${t.id}:${idx}`} style={{ paddingBottom: 2 }}>
+            <TrackRow
+              track={t}
+              idx={idx}
+              tracks={tracks}
+              gridTemplate={gridTemplate}
+              hideThumbnails={hideThumbnails}
+              showAlbum={showAlbum}
+              showPlays={showPlays}
+              isActive={active?.videoId === t.id}
+              playing={playing}
+              videoSourceSelected={sourcePrefs[t.id]?.selected === "video"}
+              removal={removal}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   // If the active track is in this list but its row isn't in the
   // virtual window, JumpToCurrentButton can't find `[data-videoid=…]`
   // via querySelector. Render a hidden zero-content marker at the
   // active row's absolute Y position so the existing scroll-into-view
   // logic keeps working without coupling JumpToCurrent to the
   // virtualizer.
-  const activeIndex = active ? (activeIndexById.get(active.videoId) ?? -1) : -1;
+  const activeIndex = active
+    ? tracks.findIndex((t) => t.id === active.videoId)
+    : -1;
   const items = virtualizer.getVirtualItems();
   const activeInWindow =
     activeIndex >= 0 && items.some((vi) => vi.index === activeIndex);
@@ -227,6 +252,7 @@ export function TrackList({
                 top: 0,
                 left: 0,
                 right: 0,
+                paddingBottom: 2,
                 transform: `translateY(${vi.start - virtualizer.options.scrollMargin}px)`,
               }}
             >
@@ -238,10 +264,10 @@ export function TrackList({
                 hideThumbnails={hideThumbnails}
                 showAlbum={showAlbum}
                 showPlays={showPlays}
-                playlistId={playlistId}
                 isActive={active?.videoId === t.id}
                 playing={playing}
                 videoSourceSelected={sourcePrefs[t.id]?.selected === "video"}
+                removal={removal}
               />
             </div>
           );
@@ -259,13 +285,13 @@ type RowProps = {
   hideThumbnails: boolean;
   showAlbum: boolean;
   showPlays: boolean;
-  playlistId?: string;
   isActive: boolean;
   playing: boolean;
   videoSourceSelected: boolean;
+  removal?: PlaylistRemovalContext;
 };
 
-function TrackRow({
+const TrackRow = memo(function TrackRow({
   track: t,
   idx,
   tracks,
@@ -273,18 +299,18 @@ function TrackRow({
   hideThumbnails,
   showAlbum,
   showPlays,
-  playlistId,
   isActive,
   playing,
   videoSourceSelected,
+  removal,
 }: RowProps) {
   const row = (
     <li
       data-videoid={t.id}
       style={{ gridTemplateColumns: gridTemplate }}
       className={cn(
-        "group grid items-center gap-3 rounded-lg p-2 cursor-pointer",
-        isActive ? "bg-black/25" : "hover:bg-surface",
+        "group grid cursor-pointer items-center gap-3 rounded-lg p-2 transition-colors",
+        isActive ? "bg-black/25" : "hover:bg-accent/60",
       )}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a")) return;
@@ -418,15 +444,23 @@ function TrackRow({
       </span>
 
       <div className="flex shrink-0 items-center justify-end">
-        <LikeDislikeButtons videoId={t.id} meta={t} compact hideUnlessLiked />
-        <TrackMoreMenu item={t} context={{ tracks, index: idx, playlistId }} />
+        <LikeDislikeButtons videoId={t.id} track={t} compact hideUnlessLiked />
+        <TrackMoreMenu
+          item={t}
+          context={{ tracks, index: idx }}
+          removal={removal}
+        />
       </div>
     </li>
   );
 
   return (
-    <TrackContextMenu item={t} context={{ tracks, index: idx, playlistId }}>
+    <TrackContextMenu
+      item={t}
+      context={{ tracks, index: idx }}
+      removal={removal}
+    >
       {row}
     </TrackContextMenu>
   );
-}
+});

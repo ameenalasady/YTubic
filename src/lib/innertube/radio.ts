@@ -1,6 +1,12 @@
 import type { ShelfItem } from "./types";
 import { mapPlaylistPanelVideo, rawNext, type YtNode } from "./shared";
 
+/** One page of a /next watch queue: tracks plus the pointer to the next page. */
+export type WatchQueuePage = {
+  tracks: ShelfItem[];
+  continuationToken?: string;
+};
+
 /**
  * Pull the `playlistPanelRenderer` (first page) or its
  * `playlistPanelContinuation` (subsequent pages) out of a /next response.
@@ -13,6 +19,15 @@ function extractPanel(json: YtNode): YtNode | undefined {
       ?.musicQueueRenderer?.content?.playlistPanelRenderer ??
     json?.continuationContents?.playlistPanelContinuation
   );
+}
+
+/** Pull the queue rows out of a /next `playlistPanelRenderer` response. */
+function parsePanel(json: YtNode): WatchQueuePage {
+  const panel = extractPanel(json);
+  const tracks = parsePanelRows(panel);
+  const continuationToken =
+    panel?.continuations?.[0]?.nextContinuationData?.continuation;
+  return { tracks, continuationToken };
 }
 
 /** Map the track rows in a panel (or panel continuation) to ShelfItems. */
@@ -175,6 +190,17 @@ export async function fetchShuffleContinuation(
     tracks: parsePanelRows(panel),
     continuation: panelContinuationToken(panel),
   };
+}
+
+/**
+ * Server-side playlist shuffle. YTM shuffles the whole playlist on the
+ * server and returns the permutation as a watch queue.
+ */
+export async function fetchShuffleQueue(
+  playlistId: string,
+  params: string,
+): Promise<WatchQueuePage> {
+  return parsePanel(await rawNext({ playlistId, params, isAudioOnly: true }));
 }
 
 /**

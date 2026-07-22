@@ -254,7 +254,11 @@ export async function innertubePost(
   body: Record<string, unknown>,
   opts: InnertubeRequestOptions = {},
 ): Promise<YtNode> {
-  const url = `https://music.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false`;
+  // `endpoint` may already carry query params (reload continuations are
+  // passed as `browse?ctoken=…` — the server ignores them in the body).
+  const url = `https://music.youtube.com/youtubei/v1/${endpoint}${
+    endpoint.includes("?") ? "&" : "?"
+  }prettyPrint=false`;
   const auth = opts.anonymous ? {} : await authHeaders();
   const visitor = opts.anonymous ? null : loadVisitorData();
   const visitorHeader: Record<string, string> = visitor
@@ -310,7 +314,7 @@ export function rawBrowseContinuation(token: string): Promise<YtNode> {
 }
 
 /**
- * Reload continuations are the "load more" / refresh action the
+ * Follow a RELOAD continuation (`reloadContinuationData`) — the kind the
  * playlist Suggestions shelf uses for its refresh action. Unlike next-
  * continuations these are sent as query params, matching the web client
  * (`?ctoken=…&continuation=…&type=next`); in the body they're ignored.
