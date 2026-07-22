@@ -6,6 +6,7 @@ import { Thumbnail } from "@/components/shared/thumbnail";
 import {
   TrackContextMenu,
   TrackMoreMenu,
+  type PlaylistRemovalContext,
 } from "@/components/shared/track-context-menu";
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,9 @@ type Props = {
    *  where YT doesn't ship duration in the shelf payload but does
    *  ship a play count. */
   showPlays?: boolean;
+  /** Enables "Remove from playlist" on rows; set only by an editable
+   *  (user-owned) playlist page. */
+  removal?: PlaylistRemovalContext;
   className?: string;
 };
 
@@ -88,6 +92,7 @@ export function TrackList({
   hideThumbnails = false,
   hideAlbum = false,
   showPlays = false,
+  removal,
   className,
 }: Props) {
   const active = usePlaybackStore(currentTrack);
@@ -229,6 +234,7 @@ export function TrackList({
                 isActive={active?.videoId === t.id}
                 playing={playing}
                 videoSourceSelected={sourcePrefs[t.id]?.selected === "video"}
+                removal={removal}
               />
             </div>
           );
@@ -249,6 +255,7 @@ type RowProps = {
   isActive: boolean;
   playing: boolean;
   videoSourceSelected: boolean;
+  removal?: PlaylistRemovalContext;
 };
 
 const TrackRow = memo(function TrackRow({
@@ -262,6 +269,7 @@ const TrackRow = memo(function TrackRow({
   isActive,
   playing,
   videoSourceSelected,
+  removal,
 }: RowProps) {
   const row = (
     <li
@@ -404,13 +412,21 @@ const TrackRow = memo(function TrackRow({
 
       <div className="flex shrink-0 items-center justify-end">
         <LikeDislikeButtons videoId={t.id} track={t} compact hideUnlessLiked />
-        <TrackMoreMenu item={t} context={{ tracks, index: idx }} />
+        <TrackMoreMenu
+          item={t}
+          context={{ tracks, index: idx }}
+          removal={removal}
+        />
       </div>
     </li>
   );
 
   return (
-    <TrackContextMenu item={t} context={{ tracks, index: idx }}>
+    <TrackContextMenu
+      item={t}
+      context={{ tracks, index: idx }}
+      removal={removal}
+    >
       {row}
     </TrackContextMenu>
   );

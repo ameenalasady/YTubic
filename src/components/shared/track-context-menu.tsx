@@ -18,6 +18,7 @@ import {
   HeartOffIcon,
   ThumbsDownIcon,
   ListMusicIcon,
+  ListXIcon,
   PlusIcon,
   MoreHorizontalIcon,
   Loader2Icon,
@@ -62,6 +63,7 @@ import {
   dislikeTrack,
   fetchUserPlaylists,
   likeTrack,
+  removeFromPlaylist,
   removeRating,
   type UserPlaylist,
 } from "@/lib/innertube/mutations";
@@ -70,6 +72,13 @@ import type { ShelfItem } from "@/lib/innertube/types";
 import { syncLastfmLove } from "@/lib/lastfm";
 
 type TrackContext = { tracks: ShelfItem[]; index: number };
+
+/**
+ * Set by pages that render an *editable* playlist the user owns. Turns
+ * on the "Remove from playlist" item, which needs the raw ("PL…")
+ * playlist id for the edit_playlist call.
+ */
+export type PlaylistRemovalContext = { playlistId: string };
 
 type Primitives = {
   Item: ComponentType<any>;
@@ -182,6 +191,35 @@ export function useTrackMenuController(item: ShelfItem) {
     }
   };
 
+  const runRemoveFromPlaylist = async (removal: PlaylistRemovalContext) => {
+    const setVideoId = item.setVideoId;
+    if (!setVideoId) return;
+    try {
+      await removeFromPlaylist(removal.playlistId, item.id, setVideoId);
+      // Drop the row from every cached playlist page in place instead of
+      // invalidating: an invalidation refetches ALL loaded pages of the
+      // infinite query, which on a large playlist is 100+ requests.
+      // setVideoId is unique per playlist entry, so matching on it can't
+      // touch other playlists' caches (or a duplicate of the same song).
+      qc.setQueriesData<{
+        pages: { tracks: ShelfItem[] }[];
+        pageParams: unknown[];
+      }>({ queryKey: ["playlist-pages"] }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((p) => ({
+            ...p,
+            tracks: p.tracks.filter((t) => t.setVideoId !== setVideoId),
+          })),
+        };
+      });
+      toast.success("Removed from playlist");
+    } catch (e) {
+      toast.error(`Remove failed: ${String(e)}`);
+    }
+  };
+
   const primeUserPlaylists = () => {
     if (!playlists.data && !playlists.isFetching && !playlists.isError) {
       void qc.fetchQuery({
@@ -199,6 +237,7 @@ export function useTrackMenuController(item: ShelfItem) {
     runRemoveRating,
     runDislike,
     runAddToPlaylist,
+    runRemoveFromPlaylist,
     primeUserPlaylists,
     newPlaylistOpen,
     setNewPlaylistOpen,
@@ -210,12 +249,15 @@ export function TrackMenuItems({
   context,
   controller,
   primitives,
+  removal,
   onGoToArtist,
 }: {
   item: ShelfItem;
   context?: TrackContext;
   controller: ReturnType<typeof useTrackMenuController>;
   primitives: Primitives;
+  /** Present only on an editable (user-owned) playlist page. */
+  removal?: PlaylistRemovalContext;
   /**
    * Handler for the "Go to artist" item. Pulled out as a prop so the
    * floating-player window can short-circuit it through a Tauri event
@@ -233,6 +275,7 @@ export function TrackMenuItems({
     runRemoveRating,
     runDislike,
     runAddToPlaylist,
+    runRemoveFromPlaylist,
     primeUserPlaylists,
     setNewPlaylistOpen,
   } = controller;
@@ -329,6 +372,13 @@ export function TrackMenuItems({
         </SubContent>
       </Sub>
 
+      {removal && item.setVideoId ? (
+        <Item onSelect={() => runRemoveFromPlaylist(removal)}>
+          <ListXIcon />
+          Remove from playlist
+        </Item>
+      ) : null}
+
       {(artist || albumBrowseId) && <Separator />}
 
       {artist?.id && onGoToArtist && (
@@ -360,6 +410,8 @@ type Props = {
   children: ReactNode;
   /** When in a track list, we want to start from this index with context. */
   context?: TrackContext;
+  /** Present only on an editable (user-owned) playlist page. */
+  removal?: PlaylistRemovalContext;
 };
 
 /**
@@ -367,7 +419,7 @@ type Props = {
  * items (artist/album/playlist cards) use a different menu shape and
  * should not wrap their children in this component.
  */
-export function TrackContextMenu({ item, children, context }: Props) {
+export function TrackContextMenu({ item, children, context, removal }: Props) {
   const controller = useTrackMenuController(item);
   const navigate = useNavigate();
 
@@ -385,6 +437,7 @@ export function TrackContextMenu({ item, children, context }: Props) {
             context={context}
             controller={controller}
             primitives={ctxPrimitives}
+            removal={removal}
             onGoToArtist={(id) =>
               navigate({ to: "/artist/$id", params: { id } })
             }
@@ -409,10 +462,13 @@ export function TrackContextMenu({ item, children, context }: Props) {
 export function TrackMoreMenu({
   item,
   context,
+  removal,
   className,
 }: {
   item: ShelfItem;
   context?: TrackContext;
+  /** Present only on an editable (user-owned) playlist page. */
+  removal?: PlaylistRemovalContext;
   className?: string;
 }) {
   const controller = useTrackMenuController(item);
@@ -444,6 +500,7 @@ export function TrackMoreMenu({
             context={context}
             controller={controller}
             primitives={dropPrimitives}
+            removal={removal}
             onGoToArtist={(id) =>
               navigate({ to: "/artist/$id", params: { id } })
             }

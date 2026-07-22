@@ -799,6 +799,7 @@ export function mapResponsiveListItem(raw: YtNode): ShelfItem | null {
       explicit: explicit || undefined,
       playCount,
       dateAdded,
+      setVideoId: raw.playlistItemData?.playlistSetVideoId,
     };
   }
 

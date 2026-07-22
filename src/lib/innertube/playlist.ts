@@ -51,6 +51,42 @@ function extractHeader(json: YtNode): YtNode {
   return result ?? {};
 }
 
+/**
+ * Whether the signed-in user owns (and can edit) this playlist. Owned
+ * playlists ship editing affordances that community/system ones never
+ * do: the editable-header wrapper on older layouts, or an
+ * `editPlaylistEndpoint` (header menu's "Edit playlist") on the
+ * responsive two-column layout. Any hit means edit_playlist mutations
+ * will be accepted.
+ */
+export function detectEditable(json: YtNode): boolean {
+  const EDIT_KEYS = [
+    "musicEditablePlaylistDetailHeaderRenderer",
+    "editPlaylistEndpoint",
+  ];
+  const seen = new WeakSet<object>();
+  let found = false;
+  const walk = (node: unknown) => {
+    if (found || !node || typeof node !== "object") return;
+    if (seen.has(node as object)) return;
+    seen.add(node as object);
+    if (Array.isArray(node)) {
+      for (const c of node) walk(c);
+      return;
+    }
+    const n = node as YtNode;
+    for (const key of EDIT_KEYS) {
+      if (n[key] !== undefined) {
+        found = true;
+        return;
+      }
+    }
+    for (const k of Object.keys(n)) walk(n[k]);
+  };
+  walk(json);
+  return found;
+}
+
 /** The header Shuffle button's watch endpoint, when the playlist has one. */
 export type PlaylistShuffle = {
   playlistId: string;
@@ -107,6 +143,8 @@ export type PlaylistFirstPage = PlaylistPage & {
   continuationToken?: string;
   /** Server-side shuffle endpoint from the header, when present. */
   shuffle?: PlaylistShuffle;
+  /** True when the signed-in user owns the playlist (rows are removable). */
+  isEditable?: boolean;
 };
 
 /** Every subsequent page — only tracks and the next token. */
@@ -214,6 +252,7 @@ export async function fetchPlaylistFirstPage(
     tracks,
     continuationToken,
     shuffle,
+    isEditable: detectEditable(json),
   };
 }
 

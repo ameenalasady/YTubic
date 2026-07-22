@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractShuffleEndpoint } from "./playlist";
+import { detectEditable, extractShuffleEndpoint } from "./playlist";
 import type { YtNode } from "./shared";
 
 // Shapes lifted from a real playlist browse header: the Shuffle button's
@@ -83,5 +83,50 @@ describe("extractShuffleEndpoint", () => {
       playlistId: "LM",
       params: "wAEB8gECKAE=",
     });
+  });
+});
+
+describe("detectEditable", () => {
+  it("detects the legacy editable-header wrapper", () => {
+    expect(
+      detectEditable({
+        header: {
+          musicEditablePlaylistDetailHeaderRenderer: {
+            header: { musicResponsiveHeaderRenderer: {} },
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("detects the responsive layout's Edit playlist menu endpoint", () => {
+    expect(
+      detectEditable({
+        contents: {
+          menu: {
+            menuRenderer: {
+              items: [
+                {
+                  menuNavigationItemRenderer: {
+                    navigationEndpoint: {
+                      editPlaylistEndpoint: { playlistId: "PLxyz" },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("reports community/system playlists as not editable", () => {
+    expect(
+      detectEditable({
+        header: { musicDetailHeaderRenderer: { title: {} } },
+        contents: { rows: [{ watchEndpoint: { videoId: "abc" } }] },
+      }),
+    ).toBe(false);
   });
 });

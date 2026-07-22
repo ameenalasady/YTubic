@@ -224,6 +224,15 @@ function PlaylistPageView() {
     }
   };
 
+  // "Remove from playlist" only makes sense on a playlist the user owns.
+  // Liked Songs is excluded: its rows are managed through like/unlike,
+  // and edit_playlist rejects "LM". Artist-view reuses of this route
+  // aren't playlists the user can edit either.
+  const removal =
+    header.isEditable && !isLikedSongs && !isArtistTopSongs && !openedFromArtist
+      ? { playlistId: id.startsWith("VL") ? id.slice(2) : id }
+      : undefined;
+
   const metadataParts = [
     header.owner,
     header.trackCount ? `${header.trackCount} songs` : undefined,
@@ -342,7 +351,11 @@ function PlaylistPageView() {
           No tracks match “{searchQuery.trim()}”.
         </div>
       ) : (
-        <TrackList tracks={visibleTracks} showPlays={isArtistTopSongs} />
+        <TrackList
+          tracks={visibleTracks}
+          showPlays={isArtistTopSongs}
+          removal={removal}
+        />
       )}
 
       {query.hasNextPage && (

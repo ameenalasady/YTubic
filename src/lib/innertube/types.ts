@@ -32,6 +32,13 @@ export type ShelfItem = {
   playCount?: string;
   /** Pre-formatted "added to playlist" date. User-owned editable playlists. */
   dateAdded?: string;
+  /**
+   * Identity of this row *within a playlist* (playlistItemData.
+   * playlistSetVideoId). Distinct from the videoId: a track added twice
+   * gets two setVideoIds. Required by edit_playlist's ACTION_REMOVE_VIDEO,
+   * so it's only present on rows parsed from a playlist browse.
+   */
+  setVideoId?: string;
   /** Round (true for artists) */
   round?: boolean;
   /**
