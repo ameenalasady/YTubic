@@ -67,15 +67,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Optional Developer ID signing + notarization. Without these, the
-          # macOS overlay falls back to an ad-hoc signature so Apple Silicon
-          # can run the build after the user approves it in Privacy & Security.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Ad-hoc macOS signature so Apple Silicon can run the build after
+          # the user approves it in Privacy & Security. No Developer ID cert
+          # yet; when one exists, export the APPLE_* env vars from a guarded
+          # $GITHUB_ENV step instead of `${{ secrets.* }}` here — a missing
+          # secret still SETS the env var (empty), which sends the bundler
+          # down the certificate-import path and fails the build.
+          APPLE_SIGNING_IDENTITY: "-"
           # Baked into the build by src-tauri/build.rs. Add these as repo
           # Actions secrets. If unset, the released build just ships with
           # scrobbling disabled and nothing else breaks.
