@@ -45,6 +45,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  frostedDialogOverlay,
+  frostedDialogPanel,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useLayoutStore, type LayoutMode } from "@/lib/store/layout";
@@ -350,7 +352,10 @@ function ReportIssueDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        className={frostedDialogPanel}
+        overlayClassName={frostedDialogOverlay}
+      >
         <DialogHeader>
           <DialogTitle>Report an issue</DialogTitle>
           <DialogDescription>

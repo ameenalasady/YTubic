@@ -13,6 +13,8 @@ import {
   DialogClose,
   DialogContent,
   DialogTitle,
+  frostedDialogOverlay,
+  frostedDialogPanel,
 } from "@/components/ui/dialog";
 import { GeneralTab } from "@/components/settings/general-tab";
 import { AppearanceTab } from "@/components/settings/appearance-tab";
@@ -50,18 +52,12 @@ export function SettingsDialog() {
         data-settings-dialog
         aria-describedby={undefined}
         showCloseButton={false}
-        // Dim the app less than the default dialog (0.5 → 0.4) so more
-        // of the red cover survives into this popup's backdrop-blur —
-        // otherwise the vivid cover collapses into a dark, desaturated
-        // mauve by the time it's passed through the overlay + panel.
-        overlayClassName="bg-black/40"
-        // Mostly-opaque (0.9) frosted panel. In dark mode the fill is a
-        // hair above --background (L 0.145 → 0.19) so it reads as a dark
-        // grey surface rather than a pure-black slab; the remaining 10%
-        // still lets a faint warm cast of the cover through the blur.
-        // Border is a touch brighter than the fill so the frosted edge
-        // stays legible against the blurred art behind it.
-        className="flex h-[600px] max-h-[85vh] w-[880px] max-w-[calc(100vw-2rem)] flex-row gap-0 overflow-hidden border-black/10 bg-background/90 p-0 backdrop-blur-2xl sm:max-w-[880px] dark:border-white/15 dark:bg-[oklch(0.19_0_0)]/90"
+        // Shared frosted surface — see the rationale in dialog.tsx.
+        overlayClassName={frostedDialogOverlay}
+        className={cn(
+          "flex h-[600px] max-h-[85vh] w-[880px] max-w-[calc(100vw-2rem)] flex-row gap-0 overflow-hidden p-0 sm:max-w-[880px]",
+          frostedDialogPanel,
+        )}
       >
         <aside className="flex w-56 shrink-0 flex-col gap-1 border-r border-border/70 bg-muted/40 p-3 dark:bg-black/20">
           {/* Same size AND vertical position as the active tab's <h3>.

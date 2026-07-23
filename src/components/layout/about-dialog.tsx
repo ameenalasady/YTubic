@@ -7,7 +7,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  frostedDialogOverlay,
+  frostedDialogPanel,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { checkForUpdates } from "@/lib/updater";
 import { openWhatsNew } from "@/lib/store/whats-new";
@@ -48,7 +51,10 @@ export function AboutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className={cn("max-w-md", frostedDialogPanel)}
+        overlayClassName={frostedDialogOverlay}
+      >
         <DialogHeader>
           <div className="flex items-center gap-3">
             <img src="/ytubic-icon.svg" alt="" className="size-12" />
