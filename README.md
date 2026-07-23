@@ -16,6 +16,9 @@
   <a href="../../releases/latest">
     <img src="https://img.shields.io/badge/%E2%AC%87%20Download-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Download" height="60" />
   </a>
+  <a href="https://discord.gg/v7JGAWWWj">
+    <img src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the YTubic Discord" height="60" />
+  </a>
 </p>
 
 Built as a reaction to the sluggish webview-wrapper experience — YTubic talks to YouTube's InnerTube API directly, renders its own UI, and caches aggressively, so navigation and playback feel instant.
