@@ -38,6 +38,7 @@ import {
   getUserInfo,
 } from "@/lib/lastfm/api";
 import { useDiscordStore, isDiscordConfigured } from "@/lib/store/discord";
+import { DiscordIcon, LastfmIcon } from "@/components/shared/brand-icons";
 
 type IntegrationId = "lastfm" | "discord";
 

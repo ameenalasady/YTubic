@@ -11,9 +11,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { checkForUpdates } from "@/lib/updater";
 import { openWhatsNew } from "@/lib/store/whats-new";
+import { DiscordIcon, GithubIcon } from "@/components/shared/brand-icons";
 
 const REPO_URL = "https://github.com/NUber-dev/YTubic";
-const KOFI_URL = "https://ko-fi.com/nuberr";
+const DISCORD_URL = "https://discord.gg/ytubic";
 
 const CREDITS: { name: string; role: string; url: string }[] = [
   { name: "yt-dlp", role: "audio streaming", url: "https://github.com/yt-dlp/yt-dlp" },
@@ -105,14 +106,17 @@ export function AboutDialog({
           .
         </p>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={link(KOFI_URL)}>
-            ☕ Support
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={link(DISCORD_URL)}>
+            <DiscordIcon />
+            Discord
           </Button>
           <Button variant="outline" onClick={link(REPO_URL)}>
+            <GithubIcon />
             GitHub
           </Button>
           <Button
+            className="ms-auto"
             onClick={() => {
               void checkForUpdates({ silent: false });
             }}
