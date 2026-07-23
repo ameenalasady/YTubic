@@ -397,7 +397,10 @@ function SidebarSignInButton() {
               toast.error(`Sign-in failed: ${String(e)}`),
             );
           }}
-          className="h-9 w-full gap-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0"
+          // `flex` (not the Button's inline-flex) in collapsed mode:
+          // mx-auto only centers block-level boxes, so without it the
+          // icon button hugs the rail's left edge.
+          className="h-9 w-full gap-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0"
         >
           <LogInIcon />
           <span className="group-data-[collapsible=icon]:hidden">Sign in</span>
