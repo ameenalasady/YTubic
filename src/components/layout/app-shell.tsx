@@ -15,19 +15,16 @@ import { IS_MAC } from "@/lib/platform";
 import { EntityPageHeader } from "@/components/layout/entity-page-header";
 import { useEntityHeaderStore } from "@/lib/store/entity-header";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
-import { PremiumGateDialog } from "@/components/layout/premium-gate-dialog";
 import { ChannelPickerDialog } from "@/components/layout/channel-picker-dialog";
-import { WhatsNewDialog } from "@/components/layout/whats-new-dialog";
 import { CoverLightboxDialog } from "@/components/layout/cover-lightbox-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAudioEngine } from "@/lib/audio-engine";
 import { useCacheAutoClean } from "@/lib/cache-cleanup";
 import { usePlaybackNotifications } from "@/lib/playback-notifications";
-import { useLastfmScrobbler } from "@/lib/lastfm-scrobbler";
+import { useLastfmScrobbler } from "@/lib/lastfm/scrobbler";
 import { useYtdlpSetup } from "@/lib/ytdlp";
 import { useUpdateStartupCheck } from "@/lib/updater";
-import { useWhatsNewOnUpdate } from "@/lib/store/whats-new";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
@@ -45,7 +42,6 @@ import {
   useAccountsChangedListener,
   useLoginSuccessListener,
 } from "@/lib/store/accounts";
-import { cn } from "@/lib/utils";
 
 function isEditableTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
@@ -92,7 +88,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   useAudioEngine();
   useYtdlpSetup();
   useUpdateStartupCheck();
-  useWhatsNewOnUpdate();
   usePremiumStatusSync();
   useLoginSuccessListener();
   useAccountsChangedListener();
@@ -107,6 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setMode = useLayoutStore((s) => s.setMode);
   const background = useSettingsStore((s) => s.background);
   const cardWidth = usePanelsStore((s) => s.cardWidth);
+  const sidebarWidth = usePanelsStore((s) => s.sidebarWidth);
   // The player UI is hidden whenever there's no active track —
   // covers the "Nothing playing" empty state at first launch and
   // after the queue is cleared. The mode itself stays the same; the
@@ -204,7 +200,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <SidebarProvider
         style={
           {
-            "--sidebar-width": "13rem",
+            "--sidebar-width": `${sidebarWidth}px`,
             "--sidebar-width-icon": "4rem",
           } as React.CSSProperties
         }
@@ -262,9 +258,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DragSnapOverlay />
           <WindowResizeHandles disabled={IS_MAC} />
           <SettingsDialog />
-          <PremiumGateDialog />
           <ChannelPickerDialog />
-          <WhatsNewDialog />
           <CoverLightboxDialog />
         </div>
       </SidebarProvider>
@@ -400,7 +394,7 @@ function SidebarResizeHandle() {
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
       className="absolute top-(--titlebar-h) bottom-0 z-20 w-1.5 -translate-x-1/2 cursor-ew-resize touch-none select-none hover:bg-sidebar-border/70 active:bg-sidebar-border"
-      style={{ left: sidebarWidth }}
+      style={{ left: sidebarWidth - 8 }}
     />
   );
 }

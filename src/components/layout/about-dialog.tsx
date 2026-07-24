@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { checkForUpdates } from "@/lib/updater";
 import { IS_BETA_PLATFORM, IS_MAC } from "@/lib/platform";
-import { openWhatsNew } from "@/lib/store/whats-new";
 import { DiscordIcon, GithubIcon } from "@/components/shared/brand-icons";
 
 const REPO_URL = "https://github.com/NUber-dev/YTubic";
@@ -65,23 +64,12 @@ export function AboutDialog({
             <img src="/ytubic-icon.svg" alt="" className="size-12" />
             <div className="flex flex-col items-start">
               <DialogTitle className="text-lg">YTubic</DialogTitle>
-              {/* Version and the What's New link share one row so the
-                  header stays two lines tall next to the 48px icon. */}
-              <div className="flex items-center gap-2">
-                <DialogDescription>
-                  {version ? `Version ${version}` : " "}
-                  {version && IS_BETA_PLATFORM
-                    ? ` · beta for ${IS_MAC ? "macOS" : "Linux"}`
-                    : ""}
-                </DialogDescription>
-                <button
-                  type="button"
-                  onClick={() => void openWhatsNew()}
-                  className="text-xs text-primary underline-offset-2 hover:underline"
-                >
-                  What's new
-                </button>
-              </div>
+              <DialogDescription>
+                {version ? `Version ${version}` : " "}
+                {version && IS_BETA_PLATFORM
+                  ? ` · beta for ${IS_MAC ? "macOS" : "Linux"}`
+                  : ""}
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
