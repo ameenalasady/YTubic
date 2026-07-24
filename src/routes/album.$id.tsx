@@ -137,14 +137,14 @@ function AlbumSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
       <div className="flex flex-row items-end gap-6">
-        <Skeleton className="size-40 shrink-0 border border-hairline shadow-lg" />
+        <Skeleton className="size-[148px] shrink-0 border border-hairline shadow-lg" />
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <Skeleton className="h-10 w-72" />
+          <Skeleton className="h-[46px] w-72" />
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-4 w-28" />
         </div>
       </div>
-      <TrackRowSkeletonList count={8} />
+      <TrackRowSkeletonList count={8} hideThumbnails hideAlbum />
     </div>
   );
 }

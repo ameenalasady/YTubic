@@ -24,6 +24,7 @@ import { ExpandableText } from "@/components/shared/expandable-text";
 import { TrackList } from "@/components/shared/track-list";
 import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -95,7 +96,7 @@ function PlaylistPageView() {
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const pages = query.data?.pages ?? [];
+  const pages = useMemo(() => query.data?.pages ?? [], [query.data?.pages]);
   const header = pages[0] as PlaylistFirstPage | undefined;
   const tracks = useMemo(() => pages.flatMap((p) => p.tracks), [pages]);
   const sortedTracks = useMemo(
@@ -144,12 +145,7 @@ function PlaylistPageView() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [
-    query.hasNextPage,
-    query.isFetchingNextPage,
-    query.fetchNextPage,
-    query.error,
-  ]);
+  }, [query]);
 
   // When the user picks any non-default sort, eagerly drain all
   // continuations so the sort applies to the whole playlist, not just
@@ -167,14 +163,7 @@ function PlaylistPageView() {
     if (query.error) return;
     const t = setTimeout(() => query.fetchNextPage(), 250);
     return () => clearTimeout(t);
-  }, [
-    sortMode,
-    normalizedQuery,
-    query.hasNextPage,
-    query.isFetchingNextPage,
-    query.fetchNextPage,
-    query.error,
-  ]);
+  }, [sortMode, normalizedQuery, query]);
 
   // Only take over the whole view on error when nothing is loaded yet.
   // A failed *continuation* fetch sets query.error while data still holds
@@ -529,16 +518,14 @@ function PlaylistSkeleton() {
   return (
     <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
       <div className="flex flex-col gap-4 md:flex-row md:items-end">
-        <Skeleton className="aspect-square w-40 md:w-56" />
+        <Skeleton className="size-[148px] shrink-0 border border-hairline shadow-lg" />
         <div className="flex flex-col gap-2">
-          <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-[46px] w-72" />
+          <Skeleton className="h-5 w-40" />
           <Skeleton className="h-4 w-24" />
         </div>
       </div>
-      {Array.from({ length: 10 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
+      <TrackRowSkeletonList count={10} />
     </div>
   );
 }

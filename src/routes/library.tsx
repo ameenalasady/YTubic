@@ -141,7 +141,7 @@ function LikedSongsView() {
     getNextPageParam: (lastPage) => lastPage.continuationToken,
   });
 
-  const pages = query.data?.pages ?? [];
+  const pages = useMemo(() => query.data?.pages ?? [], [query.data?.pages]);
   const tracks = useMemo(() => pages.flatMap((p) => p.tracks), [pages]);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -164,7 +164,7 @@ function LikedSongsView() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage, query.error]);
+  }, [query]);
 
   // Only show the full error card before any tracks load; a failed
   // continuation must not wipe the already-loaded liked-songs list.

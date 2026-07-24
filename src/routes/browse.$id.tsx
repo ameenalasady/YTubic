@@ -177,12 +177,12 @@ function BrowseShelf({
 
 function BrowseSkeleton() {
   return (
-    <div className="grid w-full gap-2 grid-cols-[repeat(auto-fill,minmax(min(100%,11rem),1fr))]">
+    <div className="grid w-full gap-2 grid-cols-[repeat(auto-fill,minmax(min(100%,11rem),1fr))] [&>*]:max-w-[16rem]">
       {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-2 p-2">
-          <Skeleton className="aspect-square w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
+        <div key={i} className="flex flex-col gap-2 rounded-lg p-2">
+          <Skeleton className="aspect-square w-full rounded-md" />
+          <Skeleton className="h-5 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
         </div>
       ))}
     </div>
