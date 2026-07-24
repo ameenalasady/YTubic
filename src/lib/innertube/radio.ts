@@ -108,3 +108,15 @@ export async function fetchWatchQueueContinuation(
 ): Promise<WatchQueuePage> {
   return parsePanel(await rawNext({ continuation: token }));
 }
+
+/**
+ * Next page of an artist shuffle station. Alias for
+ * fetchWatchQueueContinuation — both follow a /next continuation, but
+ * artist stations are anonymous so the permutation stays re-rollable.
+ */
+export async function fetchShuffleContinuation(
+  token: string,
+): Promise<{ tracks: ShelfItem[]; continuation?: string }> {
+  const page = await fetchWatchQueueContinuation(token);
+  return { tracks: page.tracks, continuation: page.continuationToken };
+}
