@@ -942,10 +942,11 @@ async fn start_login(app: tauri::AppHandle) -> Result<(), String> {
                 //      hint. The user is stuck on a Google settings
                 //      page and YT never gets a chance to handshake.
                 //
-                // For case (2), force-navigate to music.youtube.com.
-                // YT's auto-sign-in flow picks up the .google.com
-                // session cookies and exchanges them for .youtube.com
-                // cookies that InnerTube actually needs.
+                // For case (2), force-navigate to music.youtube.com
+                // when the current page host is myaccount.google.com.
+                // Do NOT force-navigate while the natural continue
+                // redirect to YT is in flight — cancelling it breaks
+                // the YT auto-sign-in handshake.
                 if !nudged_to_yt {
                     let has_google_auth = cookies.iter().any(|c| {
                         let name = c.name();
@@ -959,16 +960,35 @@ async fn start_login(app: tauri::AppHandle) -> Result<(), String> {
                                 .unwrap_or(false)
                     });
                     if has_google_auth {
-                        if let Ok(url) =
-                            "https://music.youtube.com/".parse::<tauri::Url>()
-                        {
-                            match win.navigate(url) {
-                                Ok(()) => eprintln!(
-                                    "[login] google-auth detected without YT cookies; redirected webview to music.youtube.com"
-                                ),
-                                Err(e) => eprintln!(
-                                    "[login] failed to redirect to YT: {e}"
-                                ),
+                        // Only nudge when Google parked us on an account-
+                        // settings page and never honoured the
+                        // continue=…music.youtube.com hint.
+                        // If we're already on or heading to a YouTube host
+                        // the natural redirect chain is carrying the YT
+                        // handshake — calling win.navigate() here would
+                        // cancel it mid-flight and the .youtube.com auth
+                        // cookies would never get set (the sign-in window
+                        // would just sit on music.youtube.com forever).
+                        let parked = win
+                            .url()
+                            .ok()
+                            .and_then(|u| u.host_str().map(|h| {
+                                h.ends_with("myaccount.google.com")
+                            }))
+                            .unwrap_or(false);
+                        if parked {
+                            if let Ok(url) =
+                                "https://music.youtube.com/"
+                                    .parse::<tauri::Url>()
+                            {
+                                match win.navigate(url) {
+                                    Ok(()) => eprintln!(
+                                        "[login] google-auth detected on parked page; redirected to music.youtube.com"
+                                    ),
+                                    Err(e) => eprintln!(
+                                        "[login] failed to redirect to YT: {e}"
+                                    ),
+                                }
                             }
                         }
                         nudged_to_yt = true;
