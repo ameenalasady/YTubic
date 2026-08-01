@@ -4,8 +4,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { resetInnertube } from "@/lib/innertube/client";
-import { fetchAccountInfo } from "@/lib/innertube/account";
 import { fetchChannelList } from "@/lib/innertube/channels";
+import { accountInfoQuery, authLoggedInQuery } from "@/lib/store/auth-queries";
 import { clearPrefetchMemo } from "@/lib/stream";
 import { openChannelPicker } from "@/lib/store/channel-picker";
 import { usePlaybackStore } from "@/lib/store/playback";
@@ -114,6 +114,39 @@ export function useLoginSuccessListener(): void {
   }, [qc]);
 }
 
+/**
+ * Re-check the session whenever Rust renews the cookie snapshot.
+ *
+ * The rotation echo runs on live Set-Cookie traffic, but until now it
+ * emitted nothing, so a frontend that had already decided "signed out"
+ * (a single `/account_menu` that threw because the network wasn't up
+ * yet) had no path back short of an app restart. Dropping the
+ * 5-minute auth-context cache and invalidating the auth triad turns
+ * each successful refresh into a fresh verdict.
+ *
+ * Cheap: three queries, only refetched where they're actually mounted.
+ */
+export function useSessionRefreshedListener(): void {
+  const qc = useQueryClient();
+  useEffect(() => {
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+    void listen("session-refreshed", () => {
+      resetInnertube();
+      void qc.invalidateQueries({ queryKey: ["auth-logged-in"] });
+      void qc.invalidateQueries({ queryKey: ["account-info"] });
+      void qc.invalidateQueries({ queryKey: ["premium-status"] });
+    }).then((un) => {
+      if (cancelled) un();
+      else dispose = un;
+    });
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [qc]);
+}
+
 export function useAccountsChangedListener(): void {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -126,10 +159,15 @@ export function useAccountsChangedListener(): void {
       //    flips straight from account A's pins to account B's instead
       //    of flashing through an empty list while the
       //    `["active-account-id"]` query refetches.
+      //    On failure keep the bucket we already have. Falling back to
+      //    `null` emptied the pinned rows on a transient IPC error, which
+      //    looks exactly like the account losing its pins.
       const newActiveId = await invoke<string | null>(
         "get_active_account_id",
-      ).catch(() => null);
-      usePinnedPlaylistsStore.getState().setActiveAccount(newActiveId);
+      ).catch(() => undefined);
+      if (newActiveId !== undefined) {
+        usePinnedPlaylistsStore.getState().setActiveAccount(newActiveId);
+      }
 
       // 2. Stop audio so the previous account's track doesn't keep
       //    playing while everything else churns. `clearQueue` sets
@@ -189,19 +227,8 @@ export function useAccountsChangedListener(): void {
 export function useAccountMetaBackfill(): void {
   const qc = useQueryClient();
 
-  const loggedIn = useQuery({
-    queryKey: ["auth-logged-in"],
-    queryFn: () => invoke<boolean>("is_logged_in"),
-    staleTime: 30_000,
-  });
-
-  const account = useQuery({
-    queryKey: ["account-info"],
-    queryFn: () => fetchAccountInfo(),
-    enabled: loggedIn.data === true,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
+  const loggedIn = useQuery(authLoggedInQuery);
+  const account = useQuery(accountInfoQuery(loggedIn.data === true));
 
   const activeId = useQuery({
     queryKey: ["active-account-id"],

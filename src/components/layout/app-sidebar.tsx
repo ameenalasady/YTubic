@@ -63,9 +63,13 @@ import { pickThumbnail } from "@/components/shared/thumbnail";
 import { openChannelPicker } from "@/lib/store/channel-picker";
 import { openSettings } from "@/lib/store/settings-dialog";
 import { UpdateBanner } from "@/components/layout/update-banner";
-import { fetchAccountInfo } from "@/lib/innertube/account";
 import { resetInnertube } from "@/lib/innertube/client";
+import { accountSlot } from "@/lib/auth-presence";
 import { usePremiumStore } from "@/lib/store/premium";
+import {
+  accountInfoQuery,
+  authLoggedInQuery,
+} from "@/lib/store/auth-queries";
 import {
   removeAccount,
   switchAccount,
@@ -93,16 +97,7 @@ export function AppSidebar() {
   const pinned = usePinned();
   const hidden = useHidden();
 
-  const loggedIn = useQuery({
-    queryKey: ["auth-logged-in"],
-    queryFn: () => invoke<boolean>("is_logged_in"),
-    staleTime: 30_000,
-  });
-
-  // The user's saved/created playlists from their YT Music library.
-  // Shares the `["library", "playlists"]` query key (and cache) with the
-  // Library page so opening either warms the other. Signed-in only —
-  // without cookies the browse redirects to a generic page.
+  const loggedIn = useQuery(authLoggedInQuery);
   const libraryPlaylists = useQuery({
     queryKey: ["library", "playlists"],
     queryFn: fetchLibraryPlaylists,
@@ -411,40 +406,27 @@ function SidebarSignInButton() {
 }
 
 function UserProfile() {
-  const loggedIn = useQuery({
-    queryKey: ["auth-logged-in"],
-    queryFn: () => invoke<boolean>("is_logged_in"),
-    staleTime: 30_000,
-  });
-  const account = useQuery({
-    queryKey: ["account-info"],
-    queryFn: () => fetchAccountInfo(),
-    enabled: !!loggedIn.data,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
+  const loggedIn = useQuery(authLoggedInQuery);
+  const account = useQuery(accountInfoQuery(loggedIn.data === true));
   const accounts = useAccounts();
   const premiumStatus = usePremiumStore((s) => s.status);
 
   const allAccounts = accounts.data ?? [];
   const activeAccount = allAccounts.find((a) => a.isActive) ?? allAccounts[0];
 
-  // Auth check still resolving: render nothing to avoid a flash.
-  if (loggedIn.isLoading) return null;
-
-  // No live profile: signed out, or `is_logged_in` reports a session (a
-  // SAPISID cookie exists) whose `/account_menu` never loads (expired
-  // session). With one stored account or none, the primary sign-in
-  // button is the way back in; a re-login merges into the existing row
-  // via identity dedup, so no duplicate appears. With several stored
-  // accounts, collapsing to a sign-in button would strand the user away
-  // from the healthy ones (no way to switch or to sign the broken one
-  // out), so keep the menu and render it from the stored meta instead.
-  if (!account.data) {
-    // Give a genuine first paint a moment before falling back.
-    if (loggedIn.data === true && account.isLoading) return null;
-    if (allAccounts.length < 2) return <SidebarSignInButton />;
-  }
+  // See `accountSlot` for the rule and its tests. Short version: only
+  // something authoritative gets to render a sign-in button, and a
+  // network failure is not authoritative.
+  const slot = accountSlot({
+    loggedIn: loggedIn.data,
+    accountsPending: accounts.isPending,
+    storedCount: allAccounts.length,
+    hasLiveAccount: !!account.data,
+    accountLoading: account.isLoading,
+    accountErrored: account.isError,
+  });
+  if (slot === "wait") return null;
+  if (slot === "sign-in") return <SidebarSignInButton />;
 
   const live = account.data;
   const name =

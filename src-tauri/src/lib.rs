@@ -29,6 +29,28 @@ mod discord;
 mod media;
 mod ytdlp;
 
+/// Write `bytes` to `path` atomically: a sibling temp file, flushed to
+/// disk, then renamed over the target.
+///
+/// A bare `fs::write` truncates first, so losing the process mid-write
+/// leaves a zero-length file, and a shutdown does exactly that to a
+/// running app. A truncated `cookies.enc` or `accounts.json` reads as
+/// "signed out" with no way back short of a re-login, which is the
+/// hard-logout variant of the bug users report after a cold boot.
+async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp = path.with_file_name(tmp_name);
+    let mut f = tokio::fs::File::create(&tmp).await?;
+    f.write_all(bytes).await?;
+    // fsync before the rename: without it the filesystem can publish the
+    // renamed directory entry while the contents are still only in the
+    // page cache, which is the same torn file by another route.
+    f.sync_all().await?;
+    drop(f);
+    tokio::fs::rename(&tmp, path).await
+}
+
 fn sanitize_video_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() < 32
@@ -363,12 +385,32 @@ fn legacy_cookies_enc_path(app: &tauri::AppHandle) -> PathBuf {
         .join("cookies.enc")
 }
 
+/// Read `accounts.json`. Every failure degrades to an empty index, and
+/// an empty index means `active: None`, which reads as signed out AND
+/// makes the periodic refresh loop a no-op, so nothing can heal it.
+/// That makes the difference between "file isn't there yet" (normal on
+/// a first run) and "file is there but unreadable" (a real fault, most
+/// likely a torn write from a shutdown) worth logging loudly.
 async fn read_index(app: &tauri::AppHandle) -> AccountsIndex {
     let path = accounts_index_path(app);
-    let Ok(bytes) = tokio::fs::read(&path).await else {
-        return AccountsIndex::default();
+    let bytes = match tokio::fs::read(&path).await {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return AccountsIndex::default(),
+        Err(e) => {
+            eprintln!("[accounts] read accounts.json failed: {e}; treating as signed out");
+            return AccountsIndex::default();
+        }
     };
-    serde_json::from_slice(&bytes).unwrap_or_default()
+    match serde_json::from_slice(&bytes) {
+        Ok(idx) => idx,
+        Err(e) => {
+            eprintln!(
+                "[accounts] accounts.json is unparseable ({} bytes): {e}; treating as signed out",
+                bytes.len()
+            );
+            AccountsIndex::default()
+        }
+    }
 }
 
 async fn write_index(app: &tauri::AppHandle, idx: &AccountsIndex) -> Result<(), String> {
@@ -379,7 +421,10 @@ async fn write_index(app: &tauri::AppHandle, idx: &AccountsIndex) -> Result<(), 
             .map_err(|e| format!("mkdir accounts dir: {e}"))?;
     }
     let bytes = serde_json::to_vec_pretty(idx).map_err(|e| format!("serialize: {e}"))?;
-    tokio::fs::write(&path, bytes)
+    // Atomic: this file is rewritten on every launch (meta backfill,
+    // dedup), so a truncating write opens a signed-out window on every
+    // start.
+    write_atomic(&path, &bytes)
         .await
         .map_err(|e| format!("write index: {e}"))
 }
@@ -470,14 +515,52 @@ fn generate_account_id() -> String {
 /// Read the encrypted cookie jar for the active account and decrypt
 /// it in memory. Returns `None` when nobody is signed in or
 /// decryption fails (treat as logged-out).
+///
+/// The three ways this returns `None` look identical from the outside
+/// but mean very different things: no active account, a jar that
+/// vanished or was torn by a shutdown, and a blob we can no longer
+/// decrypt (a different OS user, a restored profile), so each is
+/// logged distinctly. A silent `None` here is the single most common
+/// way a signed-in user is shown a sign-in button.
 async fn read_cookies_plain(app: &tauri::AppHandle) -> Option<String> {
     let path = active_cookies_path(app).await?;
-    let encrypted = tokio::fs::read(&path).await.ok()?;
-    let plain = tokio::task::spawn_blocking(move || secure_store::decrypt(&encrypted))
-        .await
-        .ok()?
-        .ok()?;
-    String::from_utf8(plain).ok()
+    read_jar_at(&path).await
+}
+
+/// Decrypt one account's jar off disk. Split out of
+/// `read_cookies_plain` so the merge can compare against the jar it
+/// is about to replace rather than whichever one is active.
+async fn read_jar_at(path: &std::path::Path) -> Option<String> {
+    let encrypted = match tokio::fs::read(path).await {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("[auth] no cookie jar at {}", path.display());
+            return None;
+        }
+        Err(e) => {
+            eprintln!("[auth] read cookie jar failed: {e}");
+            return None;
+        }
+    };
+    let len = encrypted.len();
+    let plain = match tokio::task::spawn_blocking(move || secure_store::decrypt(&encrypted)).await {
+        Ok(Ok(p)) => p,
+        Ok(Err(e)) => {
+            eprintln!("[auth] decrypt cookie jar failed ({len} bytes): {e}");
+            return None;
+        }
+        Err(e) => {
+            eprintln!("[auth] decrypt join failed: {e}");
+            return None;
+        }
+    };
+    match String::from_utf8(plain) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("[auth] cookie jar is not valid UTF-8: {e}");
+            None
+        }
+    }
 }
 
 /// Serialize a list of cookies into the Netscape cookie-jar format that
@@ -541,17 +624,47 @@ struct JarEntry {
 /// (`Max-Age=0` / past `Expires`). Only google/youtube domains are
 /// accepted — same filter as the login capture.
 ///
-/// Returns `(new_jar, value_changed, needs_write)`:
-/// `value_changed` — a cookie value was replaced, added or removed, so
-/// cached Cookie headers are stale; `needs_write` additionally covers
-/// attribute-only refreshes (expiry bumps) that should persist but
-/// don't invalidate caches.
+/// Cookies that identify the account.
+///
+/// A `Set-Cookie` deletion for one of these takes the app from signed
+/// in to signed out with no way back except a re-login, and this path
+/// runs on every InnerTube response including 4xx ones. The HTTP replay
+/// layer is not the authority on whether the user signed out, so a
+/// deletion here is refused and reported; the caller decides what to do
+/// with that. Rotation cookies (`*SIDCC`, `*PSIDTS`, `LOGIN_INFO`) stay
+/// deletable: tracking those is the point of the merge.
+const PROTECTED_COOKIES: [&str; 9] = [
+    "SID",
+    "HSID",
+    "SSID",
+    "APISID",
+    "SAPISID",
+    "__Secure-1PSID",
+    "__Secure-3PSID",
+    "__Secure-1PAPISID",
+    "__Secure-3PAPISID",
+];
+
+/// Outcome of folding a batch of `Set-Cookie` headers into a jar.
+struct JarMerge {
+    jar: String,
+    /// A cookie value was replaced, added or removed, so cached Cookie
+    /// headers are stale.
+    value_changed: bool,
+    /// Also covers attribute-only refreshes (expiry bumps) that should
+    /// persist but don't invalidate caches.
+    needs_write: bool,
+    /// `domain name` of every identity cookie the server tried to
+    /// expire and we refused to drop.
+    blocked_deletions: Vec<String>,
+}
+
 fn merge_set_cookies_into_jar(
     jar: &str,
     set_cookies: &[String],
     host: &str,
     now_ts: i64,
-) -> (String, bool, bool) {
+) -> JarMerge {
     let mut entries: Vec<JarEntry> = Vec::new();
     for line in jar.lines() {
         if line.starts_with('#') || line.trim().is_empty() {
@@ -574,6 +687,8 @@ fn merge_set_cookies_into_jar(
 
     let mut value_changed = false;
     let mut needs_write = false;
+    let mut blocked_deletions: Vec<String> = Vec::new();
+    let host_bare = host.trim_start_matches('.').to_ascii_lowercase();
 
     for raw in set_cookies {
         let Ok(c) = cookie::Cookie::parse(raw.trim()) else {
@@ -591,6 +706,15 @@ fn merge_set_cookies_into_jar(
             || bare == "google.com"
             || bare.ends_with(".google.com");
         if !allowed {
+            continue;
+        }
+        // RFC 6265 §5.3.5: a response may only set a cookie whose
+        // Domain the responding host sits at or below. Without this a
+        // music.youtube.com response could plant a cookie on
+        // `.google.com`, which we would then replay to Google as though
+        // Google had issued it.
+        let domain_matches = host_bare == bare || host_bare.ends_with(&format!(".{bare}"));
+        if !domain_matches {
             continue;
         }
 
@@ -611,6 +735,10 @@ fn merge_set_cookies_into_jar(
             .position(|e| e.name == c.name() && e.domain.trim_start_matches('.') == bare);
 
         if remove {
+            if PROTECTED_COOKIES.contains(&c.name()) {
+                blocked_deletions.push(format!("{bare} {}", c.name()));
+                continue;
+            }
             if let Some(i) = pos {
                 entries.remove(i);
                 value_changed = true;
@@ -654,7 +782,12 @@ fn merge_set_cookies_into_jar(
             e.domain, e.include_sub, e.path, e.secure, e.expiry, e.name, e.value
         ));
     }
-    (out, value_changed, needs_write)
+    JarMerge {
+        jar: out,
+        value_changed,
+        needs_write,
+        blocked_deletions,
+    }
 }
 
 /// Stable "same account" key derived from an account's backfilled meta.
@@ -1039,7 +1172,7 @@ async fn start_login(app: tauri::AppHandle) -> Result<(), String> {
                     return;
                 }
             };
-            if let Err(e) = tokio::fs::write(&cookies_path, &encrypted).await {
+            if let Err(e) = write_atomic(&cookies_path, &encrypted).await {
                 eprintln!("[login] write account cookies: {e}");
                 let _ = win.close();
                 let _ = tokio::fs::remove_dir_all(&cleanup_dir).await;
@@ -1124,10 +1257,74 @@ async fn get_cookie_header(
     Ok(read_cookie_header(&app, &host).await)
 }
 
+/// Does this `Cookie:` header carry what an authenticated InnerTube
+/// call actually needs: an APISID to build the SAPISIDHASH with, and a
+/// session id to identify the account.
+///
+/// Exact names, on purpose. The old check was `contains("SAPISID") ||
+/// contains("__Secure-1PSID")`, and `__Secure-1PSID` is a prefix of both
+/// `__Secure-1PSIDTS` and `__Secure-1PSIDCC`, so a jar that had lost the
+/// real session id still reported a live session.
+fn header_has_auth_cookie(header: &str) -> bool {
+    let mut has_apisid = false;
+    let mut has_sid = false;
+    for part in header.split(';') {
+        let Some((name, _)) = part.split_once('=') else {
+            continue;
+        };
+        match name.trim() {
+            "SAPISID" | "__Secure-1PAPISID" | "__Secure-3PAPISID" => has_apisid = true,
+            "SID" | "__Secure-1PSID" | "__Secure-3PSID" => has_sid = true,
+            _ => {}
+        }
+    }
+    has_apisid && has_sid
+}
+
 #[tauri::command]
 async fn is_logged_in(app: tauri::AppHandle) -> Result<bool, String> {
     let header = read_cookie_header(&app, "music.youtube.com").await;
-    Ok(header.contains("SAPISID") || header.contains("__Secure-1PSID"))
+    Ok(header_has_auth_cookie(&header))
+}
+
+/// Ask music.youtube.com whether the jar we replay still authenticates.
+///
+/// `is_logged_in` only proves that a cookie by the right name sits in a
+/// file. This is the real thing: the signed-in home page carries
+/// `"LOGGED_IN":true` in its bootstrap config and the anonymous one
+/// carries `false`, which discriminates cleanly (the signed-in document
+/// is also markedly larger). Exposed as a command for diagnosing a
+/// user's machine when the app reports signed-out at launch.
+async fn probe_session_alive(app: &tauri::AppHandle) -> Result<bool, String> {
+    let cookie = read_cookie_header(app, "music.youtube.com").await;
+    if !header_has_auth_cookie(&cookie) {
+        return Ok(false);
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| format!("build probe client: {e}"))?;
+    let res = client
+        .get("https://music.youtube.com/")
+        .header("Cookie", cookie)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| format!("probe request: {e}"))?;
+    let body = res.text().await.map_err(|e| format!("probe body: {e}"))?;
+    Ok(body.contains("\"LOGGED_IN\":true"))
+}
+
+#[tauri::command]
+async fn probe_session(app: tauri::AppHandle) -> Result<bool, String> {
+    let alive = probe_session_alive(&app).await?;
+    eprintln!("[probe] session alive: {alive}");
+    Ok(alive)
 }
 
 /// Hard-exit the process. The window's close button hides into the tray
@@ -1663,30 +1860,65 @@ async fn merge_response_cookies(
     };
 
     let now_ts = time::OffsetDateTime::now_utc().unix_timestamp();
-    let (merged, value_changed, needs_write) =
-        merge_set_cookies_into_jar(&jar, &set_cookies, &host, now_ts);
-    if !needs_write {
-        return Ok(false);
+    let merged = merge_set_cookies_into_jar(&jar, &set_cookies, &host, now_ts);
+
+    // An identity cookie the server tried to expire. We did not apply
+    // it (see PROTECTED_COOKIES): one response must not be able to
+    // hard-log the user out — a rejection carrying a sign-out burst
+    // (or a plain 4xx that echoes one) is not evidence that the
+    // account signed out. Surface it to the frontend so it re-checks
+    // the live session; if it is really gone, the check reports that.
+    if !merged.blocked_deletions.is_empty() {
+        eprintln!(
+            "[auth] refused server expiry of identity cookie(s) {:?} from {host}",
+            merged.blocked_deletions
+        );
+        let _ = app.emit("session-refreshed", ());
     }
 
-    let bytes = merged.into_bytes();
+    // The merge still honors deletions for non-identity cookies, which
+    // is correct browser behavior. It has never been logged, so we
+    // have no idea how often it fires in the field. Report it.
+    for gone in jar_cookie_keys(&jar).difference(&jar_cookie_keys(&merged.jar)) {
+        eprintln!("[auth] server expired cookie {gone} (response host {host})");
+    }
+
+    if !merged.needs_write {
+        return Ok(false);
+    }
+    let value_changed = merged.value_changed;
+    let bytes = merged.jar.into_bytes();
     let encrypted = tokio::task::spawn_blocking(move || secure_store::encrypt(&bytes))
         .await
         .map_err(|e| format!("encrypt join: {e}"))?
         .map_err(|e| format!("encrypt cookies: {e}"))?;
     // Write-then-rename: this path now runs on live rotations, not just
     // at login, and a torn cookies.enc reads as "signed out".
-    let tmp = path.with_extension("enc.tmp");
-    tokio::fs::write(&tmp, &encrypted)
+    write_atomic(&path, &encrypted)
         .await
-        .map_err(|e| format!("write jar tmp: {e}"))?;
-    tokio::fs::rename(&tmp, &path)
-        .await
-        .map_err(|e| format!("swap jar: {e}"))?;
+        .map_err(|e| format!("write jar: {e}"))?;
     if value_changed {
         eprintln!("[auth] echoed rotated session cookie(s) into the active jar");
+        // The fork's snapshot-renewal path. The keeper that upstream
+        // emits `session-refreshed` from does not exist here; the
+        // rotation echo is what keeps the jar fresh instead, so it is
+        // the moment the frontend should re-check a session it may
+        // have given up on.
+        let _ = app.emit("session-refreshed", ());
     }
     Ok(value_changed)
+}
+
+/// `domain name` keys for every entry in a Netscape jar, so two jars
+/// can be diffed to see what a merge added or dropped.
+fn jar_cookie_keys(jar: &str) -> std::collections::HashSet<String> {
+    jar.lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            (f.len() >= 7).then(|| format!("{} {}", f[0], f[5]))
+        })
+        .collect()
 }
 
 /// File (under the store plugin's default dir) + key holding the
@@ -3202,6 +3434,7 @@ pub fn run() {
             get_auth_context,
             merge_response_cookies,
             is_logged_in,
+            probe_session,
             clear_cookies,
             list_accounts,
             switch_account,
@@ -3435,6 +3668,7 @@ mod tests {
     }
 
     use super::merge_set_cookies_into_jar;
+    use super::header_has_auth_cookie;
 
     const NOW: i64 = 1_700_000_000;
     const HOST: &str = "music.youtube.com";
@@ -3451,11 +3685,14 @@ mod tests {
         let lines = vec![
             "SIDCC=new-sidcc; Domain=.youtube.com; Path=/; Secure; Max-Age=31536000".to_string(),
         ];
-        let (out, changed, dirty) = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
-        assert!(changed && dirty);
-        assert!(out.contains("SIDCC\tnew-sidcc"));
-        assert!(!out.contains("old-sidcc"));
-        assert!(out.contains("SAPISID\told-sapisid"), "untouched cookie survives");
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(m.value_changed && m.needs_write);
+        assert!(m.jar.contains("SIDCC\tnew-sidcc"));
+        assert!(!m.jar.contains("old-sidcc"));
+        assert!(
+            m.jar.contains("SAPISID\told-sapisid"),
+            "untouched cookie survives"
+        );
     }
 
     #[test]
@@ -3463,25 +3700,56 @@ mod tests {
         let lines =
             vec!["LOGIN_INFO=abc; Domain=.youtube.com; Path=/; Secure; HttpOnly; Max-Age=63072000"
                 .to_string()];
-        let (out, changed, _) = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
-        assert!(changed);
-        assert!(out.contains(".youtube.com\tTRUE\t/\tTRUE\t1763072000\tLOGIN_INFO\tabc"));
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(m.value_changed);
+        assert!(m.jar.contains(".youtube.com\tTRUE\t/\tTRUE\t1763072000\tLOGIN_INFO\tabc"));
     }
 
     #[test]
     fn merge_inserts_host_only_cookie_under_response_host() {
         let lines = vec!["PZS=1; Path=/; Secure; Max-Age=600".to_string()];
-        let (out, changed, _) = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
-        assert!(changed);
-        assert!(out.contains(".music.youtube.com\tTRUE\t/\tTRUE"));
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(m.value_changed);
+        assert!(m.jar.contains(".music.youtube.com\tTRUE\t/\tTRUE"));
     }
 
     #[test]
     fn merge_removes_expired_cookie() {
         let lines = vec!["SIDCC=gone; Domain=.youtube.com; Path=/; Max-Age=0".to_string()];
-        let (out, changed, _) = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
-        assert!(changed);
-        assert!(!out.contains("SIDCC"));
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(m.value_changed);
+        assert!(!m.jar.contains("SIDCC"));
+    }
+
+    // A response must never be able to sign the user out. Google sends a
+    // deletion burst for the identity cookies on a real sign-out, and
+    // `captureSetCookies` runs before the `res.ok` bail, so a 4xx could
+    // carry one too.
+    #[test]
+    fn merge_refuses_to_delete_identity_cookies() {
+        let lines = vec![
+            "SAPISID=EXPIRED; Domain=.youtube.com; Path=/; Max-Age=0".to_string(),
+            "SIDCC=gone; Domain=.youtube.com; Path=/; Max-Age=0".to_string(),
+        ];
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(
+            m.jar.contains("SAPISID\told-sapisid"),
+            "identity cookie must survive a server expiry"
+        );
+        assert!(!m.jar.contains("SIDCC"), "rotation cookies stay deletable");
+        assert_eq!(m.blocked_deletions, vec!["youtube.com SAPISID".to_string()]);
+    }
+
+    // RFC 6265 §5.3.5. Without the host check a music.youtube.com
+    // response could plant a cookie on .google.com that we would then
+    // replay to Google as if Google had issued it.
+    #[test]
+    fn merge_rejects_a_domain_the_response_host_is_not_under() {
+        let lines =
+            vec!["EVIL=1; Domain=.google.com; Path=/; Secure; Max-Age=1000".to_string()];
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(!m.value_changed && !m.needs_write);
+        assert_eq!(m.jar, jar(), "jar must be untouched");
     }
 
     #[test]
@@ -3490,9 +3758,33 @@ mod tests {
             "tracker=1; Domain=.example.com; Path=/; Max-Age=1000".to_string(),
             "__cf_bm=x; Domain=.genius.com; Path=/; Max-Age=1000".to_string(),
         ];
-        let (out, changed, dirty) = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
-        assert!(!changed && !dirty);
-        assert_eq!(out, jar(), "jar must be untouched");
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        assert!(!m.value_changed && !m.needs_write);
+        assert_eq!(m.jar, jar(), "jar must be untouched");
+    }
+
+    // `is_logged_in` used to substring-match, and `__Secure-1PSID` is a
+    // prefix of both `__Secure-1PSIDTS` and `__Secure-1PSIDCC`, so a jar
+    // that had lost the real SID still reported a live session.
+    #[test]
+    fn auth_check_ignores_prefix_lookalike_cookies() {
+        assert!(!header_has_auth_cookie(
+            "__Secure-1PSIDTS=a; __Secure-1PSIDCC=b; SIDCC=c"
+        ));
+    }
+
+    #[test]
+    fn auth_check_needs_both_an_apisid_and_a_sid() {
+        assert!(!header_has_auth_cookie("SAPISID=a; SIDCC=b"));
+        assert!(!header_has_auth_cookie("__Secure-1PSID=a; YSC=b"));
+        assert!(header_has_auth_cookie("SAPISID=a; __Secure-1PSID=b"));
+        assert!(header_has_auth_cookie("__Secure-3PAPISID=a; SID=b"));
+    }
+
+    #[test]
+    fn auth_check_tolerates_spacing_and_empty_input() {
+        assert!(header_has_auth_cookie("  SAPISID=a ;   SID=b  "));
+        assert!(!header_has_auth_cookie(""));
     }
 
     #[test]
@@ -3500,7 +3792,8 @@ mod tests {
         let lines = vec![
             "SIDCC=old-sidcc; Domain=.youtube.com; Path=/; Secure; Max-Age=31536000".to_string(),
         ];
-        let (out, changed, dirty) = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        let m = merge_set_cookies_into_jar(&jar(), &lines, HOST, NOW);
+        let (out, changed, dirty) = (m.jar, m.value_changed, m.needs_write);
         assert!(!changed, "same value must not invalidate the header cache");
         assert!(dirty, "but the fresher expiry should be written");
         assert!(out.contains(&format!("{}", NOW + 31_536_000)));

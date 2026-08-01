@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { authLoggedInQuery } from "@/lib/store/auth-queries";
 import {
   AlertCircleIcon,
   ChevronRightIcon,
@@ -613,11 +613,7 @@ type LibrarySearchState = {
  * share one query/computation.
  */
 function useLibrarySearch(query: string, enabled: boolean): LibrarySearchState {
-  const loggedIn = useQuery({
-    queryKey: ["auth-logged-in"],
-    queryFn: () => invoke<boolean>("is_logged_in"),
-    staleTime: 30_000,
-  });
+  const loggedIn = useQuery(authLoggedInQuery);
 
   const lib = useQuery({
     queryKey: ["library", "liked-songs-all"],

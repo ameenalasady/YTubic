@@ -41,6 +41,7 @@ import {
   useAccountMetaBackfill,
   useAccountsChangedListener,
   useLoginSuccessListener,
+  useSessionRefreshedListener,
 } from "@/lib/store/accounts";
 
 function isEditableTarget(el: EventTarget | null): boolean {
@@ -91,6 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   usePremiumStatusSync();
   useLoginSuccessListener();
   useAccountsChangedListener();
+  useSessionRefreshedListener();
   useAccountMetaBackfill();
   useGlobalShortcuts();
   useCloseBehaviorSync();
