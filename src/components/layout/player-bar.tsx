@@ -42,6 +42,7 @@ import { usePlayerCoverDrag } from "@/lib/player-drag";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { usePanelsStore } from "@/lib/store/panels";
+import { useScrubStore } from "@/lib/store/scrub";
 import { lookupITunesCover, cacheCoverToDisk } from "@/lib/cover-art";
 import type { QueueTrack, RepeatMode } from "@/lib/store/playback";
 
@@ -337,7 +338,10 @@ export function PlayerBar({
   const setShuffle = usePlaybackStore((s) => s.setShuffle);
   const cycleRepeat = usePlaybackStore((s) => s.cycleRepeat);
 
-  const [scrub, setScrub] = useState<number | null>(null);
+  // Shared rather than local: the lyrics panel reads the live drag
+  // target so its text follows the thumb instead of waiting for release.
+  const scrub = useScrubStore((s) => s.scrub);
+  const setScrub = useScrubStore((s) => s.setScrub);
   const [queueOpen, setQueueOpen] = useState(false);
   const iTunesCover = useITunesCover(track);
   const lyricsState = useLyricsView(track);
