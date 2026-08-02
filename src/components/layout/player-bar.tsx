@@ -37,6 +37,7 @@ import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtistLinks } from "@/components/shared/artist-links";
 import { AlbumLink } from "@/components/shared/album-link";
 import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
+import { PlayerCoverMenu } from "@/components/layout/player-cover-menu";
 import { cn } from "@/lib/utils";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
@@ -442,27 +443,29 @@ export function PlayerBar({
             button below the visible area. The right-card variant has
             an effective inner width of 320 anyway (22rem - p-4*2), so
             the cap is a no-op there. */}
-        <div
-          ref={coverRef}
-          onPointerDown={onCoverPointerDown}
-          className={cn(
-            "mx-auto w-full max-w-[20rem] touch-none select-none",
-            variant !== "floating" && "cursor-grab active:cursor-grabbing",
-          )}
-        >
-          {track ? (
-            <Thumbnail
-              thumbnails={track.thumbnails}
-              alt={track.title}
-              className="aspect-square w-full rounded-md border border-hairline pointer-events-none"
-              targetSize={1024}
-              highRes
-              overrideHighRes={iTunesCover}
-            />
-          ) : (
-            <div className="aspect-square w-full rounded-md border border-hairline bg-muted" />
-          )}
-        </div>
+        <PlayerCoverMenu track={track}>
+          <div
+            ref={coverRef}
+            onPointerDown={onCoverPointerDown}
+            className={cn(
+              "mx-auto w-full max-w-[20rem] touch-none select-none",
+              variant !== "floating" && "cursor-grab active:cursor-grabbing",
+            )}
+          >
+            {track ? (
+              <Thumbnail
+                thumbnails={track.thumbnails}
+                alt={track.title}
+                className="aspect-square w-full rounded-md border border-hairline pointer-events-none"
+                targetSize={1024}
+                highRes
+                overrideHighRes={iTunesCover}
+              />
+            ) : (
+              <div className="aspect-square w-full rounded-md border border-hairline bg-muted" />
+            )}
+          </div>
+        </PlayerCoverMenu>
 
         {/* Title + artist with heart on the right */}
         <div className="flex items-start gap-2">
