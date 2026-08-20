@@ -2288,11 +2288,11 @@ fn resolve_stream_ytdlp(app: tauri::AppHandle, video_id: String) -> Result<Strin
     command.args([
         "-j",
         "-f",
-        "bestaudio",
+        "bestaudio[ext=webm]/bestaudio/best",
         "--no-playlist",
         "--no-warnings",
         "--extractor-args",
-        "youtube:player_client=tv,android_vr",
+        "youtube:player_client=tv,android",
         &url,
     ]);
     // Windows: a console-less GUI process spawning the console-subsystem
@@ -2330,9 +2330,9 @@ type DownloadMap = Arc<Mutex<HashMap<String, Arc<DownloadState>>>>;
 
 // NB: streaming is anonymous BY DEFAULT. YouTube's bot-detection treats
 // an authenticated request through a non-browser player client (tv,
-// android_vr) as a bot — it can't produce a PO token, so it looks like
+// android) as a bot — it can't produce a PO token, so it looks like
 // an account scraping — and strips every real audio format, leaving only
-// storyboard thumbnails. Anonymous streaming via tv/android_vr avoids
+// storyboard thumbnails. Anonymous streaming via tv/android avoids
 // that entirely and is the primary path.
 //
 // The one exception is age-restricted videos: those can't be played
@@ -2903,15 +2903,15 @@ fn spawn_downloader(
 
         let program = ytdlp::program(&srv.ytdlp_bin);
 
-        // Primary attempt: anonymous, via the tv/android_vr clients — best
+        // Primary attempt: anonymous, via the tv/android clients — best
         // formats and lowest bot-detection scrutiny (see StreamServer note).
-        const AUDIO_FORMAT: &str = "bestaudio[ext=webm]/bestaudio";
+        const AUDIO_FORMAT: &str = "bestaudio[ext=webm]/bestaudio/best";
         let mut attempt = download_attempt(
             &program,
             &url,
             &part_path,
             AUDIO_FORMAT,
-            "tv,android_vr",
+            "tv,android",
             None,
             &state,
         )
@@ -2920,7 +2920,7 @@ fn spawn_downloader(
         // Age-restricted videos can't be streamed anonymously. If the
         // anonymous attempt failed specifically with the age-gate error and
         // an account is signed in, retry once with that account's cookies.
-        // Reuse the tv/android_vr clients (which already return real webm
+        // Reuse the tv/android clients (which already return real webm
         // audio on the anonymous path — the web clients only expose
         // SABR/storyboard formats here) and just let the cookies supply the
         // account's age confirmation. A trailing `/best` guards against a
@@ -2936,7 +2936,7 @@ fn spawn_downloader(
                         &url,
                         &part_path,
                         "bestaudio[ext=webm]/bestaudio/best",
-                        "tv,android_vr",
+                        "tv,android",
                         Some(cookies.path()),
                         &state,
                     )

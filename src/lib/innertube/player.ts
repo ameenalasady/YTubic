@@ -67,7 +67,7 @@ export async function resolveStream(videoId: string): Promise<ResolvedStream> {
     console.debug("[player] yt-dlp resolve:", videoId);
   }
 
-  // Delegates to a Rust command that runs `yt-dlp -j -f bestaudio`.
+  // Delegates to a Rust command that runs `yt-dlp -j -f bestaudio[ext=webm]/bestaudio/best`.
   // Keeping the subprocess on the Rust side sidesteps Tauri's
   // shell-scope validation quirks.
   let stdout: string;
