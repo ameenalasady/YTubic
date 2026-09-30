@@ -49,6 +49,13 @@ type State = {
    *  (Upstream bcb0bbb; fork's Discord/Last.fm live in separate stores,
    *  so only autoUpdate is ported here.) */
   autoUpdate: boolean;
+  /** Accent-colored glowing outline around the window edge
+   *  (see `components/layout/window-glow.tsx`). */
+  windowGlow: boolean;
+  /** Tint the glow with the current cover's dominant color. */
+  windowGlowCover: boolean;
+  /** Glow thickness, 10-100 (50 = default). */
+  windowGlowSize: number;
   setCloseAction: (v: CloseButtonAction) => void;
   setCacheAutoClean: (v: CacheAutoCleanPeriod) => void;
   markCacheCleaned: () => void;
@@ -59,6 +66,9 @@ type State = {
   setPlaybackNotifications: (v: boolean) => void;
   setLyricsEnabled: (v: boolean) => void;
   setAutoUpdate: (v: boolean) => void;
+  setWindowGlow: (v: boolean) => void;
+  setWindowGlowCover: (v: boolean) => void;
+  setWindowGlowSize: (v: number) => void;
 };
 
 /**
@@ -80,6 +90,9 @@ export const useSettingsStore = create<State>()(
       playbackNotifications: false,
       lyricsEnabled: true,
       autoUpdate: true,
+      windowGlow: true,
+      windowGlowCover: true,
+      windowGlowSize: 50,
       setCloseAction: (closeAction) => set({ closeAction }),
       setCacheAutoClean: (cacheAutoClean) => set({ cacheAutoClean }),
       markCacheCleaned: () => set({ lastCacheCleanAt: Date.now() }),
@@ -91,6 +104,10 @@ export const useSettingsStore = create<State>()(
         set({ playbackNotifications }),
       setLyricsEnabled: (lyricsEnabled) => set({ lyricsEnabled }),
       setAutoUpdate: (autoUpdate) => set({ autoUpdate }),
+      setWindowGlow: (windowGlow) => set({ windowGlow }),
+      setWindowGlowCover: (windowGlowCover) => set({ windowGlowCover }),
+      setWindowGlowSize: (v) =>
+        set({ windowGlowSize: Math.min(100, Math.max(10, Math.round(v))) }),
     }),
     { name: "ytm-settings" },
   ),

@@ -11,6 +11,7 @@ import { PlayerBarBottom } from "@/components/layout/player-bar-bottom";
 import { FloatingPlayerSync } from "@/components/layout/floating-player-sync";
 import { DragSnapOverlay } from "@/components/layout/drag-snap-overlay";
 import { WindowResizeHandles } from "@/components/layout/window-resize-handles";
+import { WindowGlow } from "@/components/layout/window-glow";
 import { IS_MAC } from "@/lib/platform";
 import { EntityPageHeader } from "@/components/layout/entity-page-header";
 import { useEntityHeaderStore } from "@/lib/store/entity-header";
@@ -285,6 +286,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DragSnapOverlay />
           <FullscreenPlayer />
           <WindowResizeHandles disabled={IS_MAC} />
+          <WindowGlow />
           <SettingsDialog />
           <ChannelPickerDialog />
           <CoverLightboxDialog />

@@ -8,6 +8,7 @@ import {
   IconLayoutFilled,
   IconPaletteFilled,
   IconPhotoFilled,
+  IconSparkles,
   IconThumbDown,
   IconThumbUp,
   IconTypography,
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
 import { INTERFACE_FONTS, interfaceFontStack } from "@/lib/interface-font";
 import { cn } from "@/lib/utils";
@@ -65,6 +67,12 @@ export function AppearanceTab() {
   const setBackground = useSettingsStore((s) => s.setBackground);
   const rating = useSettingsStore((s) => s.ratingButtons);
   const setRating = useSettingsStore((s) => s.setRatingButtons);
+  const windowGlow = useSettingsStore((s) => s.windowGlow);
+  const setWindowGlow = useSettingsStore((s) => s.setWindowGlow);
+  const windowGlowCover = useSettingsStore((s) => s.windowGlowCover);
+  const setWindowGlowCover = useSettingsStore((s) => s.setWindowGlowCover);
+  const windowGlowSize = useSettingsStore((s) => s.windowGlowSize);
+  const setWindowGlowSize = useSettingsStore((s) => s.setWindowGlowSize);
 
   return (
     <TabPane>
@@ -96,6 +104,48 @@ export function AppearanceTab() {
               checked={background === "ambient"}
               onCheckedChange={(v) => setBackground(v ? "ambient" : "plain")}
               aria-label="Ambient Background"
+            />
+          }
+        />
+        <SettingRow
+          icon={IconSparkles}
+          title="Window Glow"
+          description="A soft glowing accent outline around the window edge."
+          control={
+            <Switch
+              checked={windowGlow}
+              onCheckedChange={setWindowGlow}
+              aria-label="Window Glow"
+            />
+          }
+        />
+        <SettingRow
+          icon={IconSparkles}
+          title="Glow Matches Cover"
+          description="Tint the window glow with the current cover's dominant color."
+          control={
+            <Switch
+              checked={windowGlowCover}
+              onCheckedChange={setWindowGlowCover}
+              disabled={!windowGlow}
+              aria-label="Glow Matches Cover"
+            />
+          }
+        />
+        <SettingRow
+          icon={IconSparkles}
+          title="Glow Size"
+          description="How far the window glow reaches into the window."
+          control={
+            <Slider
+              value={[windowGlowSize]}
+              onValueChange={([v]) => setWindowGlowSize(v)}
+              min={10}
+              max={100}
+              step={5}
+              disabled={!windowGlow}
+              aria-label="Glow Size"
+              className="w-[150px]"
             />
           }
         />
