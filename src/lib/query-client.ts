@@ -108,15 +108,30 @@ export function shouldPersistQuery(queryKey: readonly unknown[]): boolean {
 const MAX_PERSIST_BYTES_PER_QUERY = 250 * 1024;
 
 /**
- * Cheap-but-meaningful size estimate for a query's `data`. We don't
- * reach for `JSON.stringify` here since the persister itself will
- * stringify on dehydrate; `JSON.stringify` is what gets called
- * downstream so its byte count is the only one that matters.
+ * Verdicts by `data` object. Every persist (throttled to 5 s) runs
+ * `shouldDehydrateQuery` on each query, and stringifying an unchanged
+ * multi-MB liked-songs list each time just to measure it is pure waste.
+ * Query data is immutable; a refetch swaps in a new object, which misses
+ * here and gets measured fresh.
+ */
+const budgetVerdicts = new WeakMap<object, boolean>();
+
+/**
+ * Whether a query's `data` fits under `MAX_PERSIST_BYTES_PER_QUERY`,
+ * measured with `JSON.stringify` since that is what the persister writes.
  */
 export function fitsInPersistBudget(data: unknown): boolean {
-  try {
-    return JSON.stringify(data).length <= MAX_PERSIST_BYTES_PER_QUERY;
-  } catch {
-    return false;
+  const cacheable = typeof data === "object" && data !== null;
+  if (cacheable) {
+    const known = budgetVerdicts.get(data);
+    if (known !== undefined) return known;
   }
+  let fits: boolean;
+  try {
+    fits = JSON.stringify(data).length <= MAX_PERSIST_BYTES_PER_QUERY;
+  } catch {
+    fits = false;
+  }
+  if (cacheable) budgetVerdicts.set(data, fits);
+  return fits;
 }
