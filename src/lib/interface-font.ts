@@ -1,7 +1,4 @@
-import "@fontsource-variable/inter";
-import "@fontsource-variable/roboto";
-import "@fontsource-variable/ibm-plex-sans";
-import "@fontsource-variable/google-sans-flex";
+import "@/fonts.css";
 import { useSettingsStore, type InterfaceFont } from "@/lib/store/settings";
 
 /**
