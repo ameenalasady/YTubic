@@ -20,6 +20,11 @@ import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { TrackList } from "@/components/shared/track-list";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ShelfSectionSkeleton,
+  TrackRowSkeletonList,
+} from "@/components/shared/skeletons";
+import { EntityHeaderSkeleton } from "@/components/layout/entity-page-header";
 import { Button } from "@/components/ui/button";
 import { copyLink } from "@/lib/clipboard";
 import { universalShareUrl } from "@/lib/deep-link";
@@ -473,16 +478,25 @@ function ListShelf({
 
 function ArtistSkeleton() {
   return (
-    <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-row items-center gap-[34px]">
-        <Skeleton className="size-[148px] rounded-xl border border-hairline shadow-lg" />
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-[46px] w-64" />
-          <Skeleton className="h-5 w-40" />
-        </div>
+    <>
+      {/* Shuffle, Mix, Subscribe, Share; Mix and Subscribe shrink to icon
+          buttons in a narrow header, as the real ones do. */}
+      <EntityHeaderSkeleton
+        subtitle
+        actions={[
+          "w-24",
+          cn("w-[73px]", NARROW_ICON_ONLY),
+          cn("w-[156px]", NARROW_ICON_ONLY),
+          "w-9",
+        ]}
+      />
+      <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
+        <section className="flex flex-col gap-3">
+          <Skeleton className="ml-1 h-7 w-32" />
+          <TrackRowSkeletonList count={5} showPlays />
+        </section>
+        <ShelfSectionSkeleton titleWidth="w-24" />
       </div>
-      <Skeleton className="h-40 w-full" />
-      <Skeleton className="h-40 w-full" />
-    </div>
+    </>
   );
 }

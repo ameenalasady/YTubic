@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { IconArrowsShuffle, IconPlayerPlayFilled } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ArtworkOutline } from "@/components/shared/artwork-outline";
 import {
   getRenderedThumbnailSrc,
@@ -31,6 +32,40 @@ const COMPACT_ROUND_COVER_TOP = 9;
 const INFO_LEFT = 206;
 const COMPACT_INFO_LEFT = 82;
 const COMPACT_ROUND_INFO_LEFT = 86;
+
+const TITLE_HEIGHT = 46;
+const SUBTITLE_HEIGHT = 24;
+const METADATA_HEIGHT = 22;
+const ACTIONS_GAP = 18;
+const ACTIONS_HEIGHT = 36;
+
+/**
+ * Where the expanded header's title, detail lines and action row sit.
+ * The block is centred vertically against the cover, so it depends on
+ * which parts are present. Shared with `EntityHeaderSkeleton`, so the
+ * loading state puts its bars exactly where the text will land.
+ */
+function heroGeometry(parts: {
+  subtitle: boolean;
+  metadata: boolean;
+  actions: boolean;
+}) {
+  const detailsHeight =
+    (parts.subtitle ? SUBTITLE_HEIGHT : 0) +
+    (parts.metadata ? METADATA_HEIGHT : 0) +
+    (parts.actions ? ACTIONS_GAP + ACTIONS_HEIGHT + 4 : 0);
+  const titleTop = Math.max(
+    COVER_TOP,
+    (EXPANDED_HEIGHT - TITLE_HEIGHT - detailsHeight) / 2,
+  );
+  const detailsTop = titleTop + TITLE_HEIGHT;
+  const actionsTop =
+    detailsTop +
+    (parts.subtitle ? SUBTITLE_HEIGHT : 0) +
+    (parts.metadata ? METADATA_HEIGHT : 0) +
+    ACTIONS_GAP;
+  return { titleTop, detailsTop, actionsTop };
+}
 
 /**
  * One physical header that morphs using compositor-only transforms.
@@ -206,11 +241,11 @@ export function EntityPageHeader() {
   if (!config) return null;
 
   const hasActions = !!(config.onPlay || config.onShuffle || config.actions);
-  const detailsHeight =
-    (config.subtitle ? 24 : 0) +
-    (config.metadata ? 22 : 0) +
-    (hasActions ? 58 : 0);
-  const titleTop = Math.max(18, (EXPANDED_HEIGHT - 46 - detailsHeight) / 2);
+  const { titleTop, detailsTop, actionsTop } = heroGeometry({
+    subtitle: !!config.subtitle,
+    metadata: !!config.metadata,
+    actions: hasActions,
+  });
 
   return (
     <div
@@ -276,7 +311,7 @@ export function EntityPageHeader() {
         className="pointer-events-auto absolute right-6"
         style={{
           left: INFO_LEFT,
-          top: titleTop + 46,
+          top: detailsTop,
           willChange: "opacity, transform",
         }}
       >
@@ -298,12 +333,7 @@ export function EntityPageHeader() {
           className="pointer-events-auto absolute flex shrink-0 items-center gap-2"
           style={{
             left: INFO_LEFT,
-            top:
-              titleTop +
-              46 +
-              (config.subtitle ? 24 : 0) +
-              (config.metadata ? 22 : 0) +
-              18,
+            top: actionsTop,
             willChange: "transform",
           }}
         >
@@ -347,3 +377,81 @@ const HeaderActions = memo(function HeaderActions({
     </>
   );
 });
+
+/**
+ * Loading stand-in for the expanded header, drawn in flow at the top of
+ * the scroller. It takes the same height the real header reserves and
+ * places each bar with `heroGeometry`, so when the data lands the cover,
+ * title, detail lines and buttons appear exactly where the bars were.
+ *
+ * `actions` lists one width class per button (`w-9` for an icon button).
+ */
+export function EntityHeaderSkeleton({
+  subtitle = false,
+  metadata = false,
+  actions = [],
+  round = false,
+  toolbar = false,
+}: {
+  subtitle?: boolean;
+  metadata?: boolean;
+  actions?: string[];
+  round?: boolean;
+  /** A search field pinned under the header, like Top songs has. */
+  toolbar?: boolean;
+}) {
+  const { titleTop, detailsTop, actionsTop } = heroGeometry({
+    subtitle,
+    metadata,
+    actions: actions.length > 0,
+  });
+  const metadataTop = detailsTop + (subtitle ? SUBTITLE_HEIGHT : 0);
+  return (
+    <div
+      aria-hidden
+      className="@container/hdr relative shrink-0"
+      style={{ height: EXPANDED_HEIGHT + (toolbar ? TOOLBAR_HEIGHT : 0) }}
+    >
+      <Skeleton
+        className={cn(
+          "absolute left-6 border border-hairline",
+          round ? "rounded-full" : "rounded-xl",
+        )}
+        style={{ top: COVER_TOP, width: COVER_SIZE, height: COVER_SIZE }}
+      />
+      {/* Bars cover the glyphs, not the line box: 40px type on a 46px
+          line, 14px on 20px, 12px on 16px. */}
+      <Skeleton
+        className="absolute h-[34px] w-[min(16rem,calc(100%-230px))] rounded-lg"
+        style={{ left: INFO_LEFT, top: titleTop + 6 }}
+      />
+      {subtitle ? (
+        <Skeleton
+          className="absolute h-3.5 w-40"
+          style={{ left: INFO_LEFT, top: detailsTop + 7 }}
+        />
+      ) : null}
+      {metadata ? (
+        <Skeleton
+          className="absolute h-3 w-32"
+          style={{ left: INFO_LEFT, top: metadataTop + 8 }}
+        />
+      ) : null}
+      {actions.length > 0 ? (
+        <div
+          className="absolute flex items-center gap-2"
+          style={{ left: INFO_LEFT, top: actionsTop }}
+        >
+          {actions.map((w, i) => (
+            <Skeleton key={i} className={cn("h-9 rounded-lg", w)} />
+          ))}
+        </div>
+      ) : null}
+      {toolbar ? (
+        <div className="absolute inset-x-6 top-[184px] h-[60px] pt-[11px]">
+          <Skeleton className="h-8 w-full rounded-[10px]" />
+        </div>
+      ) : null}
+    </div>
+  );
+}

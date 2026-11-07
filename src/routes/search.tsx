@@ -31,9 +31,9 @@ import { Thumbnail } from "@/components/shared/thumbnail";
 import { TrackContextMenu } from "@/components/shared/track-context-menu";
 import {
   ShelfCardSkeleton,
-  ShelfSectionSkeleton,
   TrackRowSkeletonList,
 } from "@/components/shared/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,7 +158,7 @@ function SearchPage() {
           onRetry={() => refetch()}
         />
       ) : isLoading ? (
-        <SearchSkeleton variant={filter === "songs" ? "list" : "shelves"} />
+        <SearchSkeleton filter={filter} />
       ) : !data ? null : filter === "all" ? (
         <AllResults data={data} />
       ) : (
@@ -686,7 +686,7 @@ function LibraryResults({
   query: string;
 }) {
   if (state.loggedInKnown && !state.isLoggedIn) return <LibrarySignInHint />;
-  if (state.isLoading) return <SearchSkeleton variant="list" />;
+  if (state.isLoading) return <TrackRowSkeletonList count={8} />;
   if (state.error)
     return <ErrorCard title="Search failed" message={state.error.message} />;
   if (state.matches.length === 0) {
@@ -972,18 +972,56 @@ function ShelfSkeleton({
   );
 }
 
-function SearchSkeleton({
-  variant = "shelves",
-}: {
-  variant?: "shelves" | "list";
-}) {
-  if (variant === "list") {
-    return <TrackRowSkeletonList count={8} />;
+/**
+ * Loading state for the catalog results, shaped like what each tab
+ * renders: All is the top-result card plus the sections in their real
+ * order and titles, Songs is the track table, and the other tabs are the
+ * responsive card grid (wider 16:9 cards for Videos).
+ */
+function SearchSkeleton({ filter }: { filter: SearchFilter }) {
+  if (filter === "songs") return <TrackRowSkeletonList count={8} />;
+  if (filter !== "all") {
+    const video = filter === "videos";
+    return (
+      <div
+        className={
+          video
+            ? "grid w-full gap-3 grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))]"
+            : "grid w-full gap-2 grid-cols-[repeat(auto-fill,minmax(min(100%,11rem),1fr))] [&>*]:max-w-[20rem]"
+        }
+      >
+        {Array.from({ length: 8 }).map((_, i) => (
+          <ShelfCardSkeleton key={i} video={video} />
+        ))}
+      </div>
+    );
   }
   return (
     <div className="flex flex-col gap-8">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <ShelfSectionSkeleton key={i} titleWidth="w-48" />
+      <section className="flex flex-col gap-3">
+        <h2 className="px-1 text-xl font-semibold tracking-tight text-muted-foreground/60">
+          Top result
+        </h2>
+        {/* TopResultHero's card: cover, title and subtitle, action button. */}
+        <div className="flex items-center gap-3 rounded-xl border bg-card/40 p-4 pr-5">
+          <div className="flex min-w-0 flex-1 items-center gap-5">
+            <Skeleton className="size-24 shrink-0 rounded-lg md:size-28" />
+            <div className="flex min-w-0 flex-1 flex-col gap-3">
+              <Skeleton className="h-7 w-40 max-w-full" />
+              <Skeleton className="h-3.5 w-48 max-w-full" />
+            </div>
+          </div>
+          <Skeleton className="h-10 w-[94px] shrink-0 rounded-lg" />
+          {/* The chevron an album/artist/playlist result ends with. */}
+          <div className="size-6 shrink-0" />
+        </div>
+      </section>
+      {ALL_SECTIONS.slice(0, 2).map((sec) => (
+        <ShelfSkeleton
+          key={sec.filter}
+          title={sec.title}
+          display={sec.display}
+        />
       ))}
     </div>
   );

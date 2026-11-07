@@ -25,6 +25,7 @@ import { TrackList } from "@/components/shared/track-list";
 import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrackRowSkeletonList } from "@/components/shared/skeletons";
+import { EntityHeaderSkeleton } from "@/components/layout/entity-page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -178,7 +179,14 @@ function PlaylistPageView() {
     );
   }
 
-  if (!header) return <PlaylistSkeleton />;
+  if (!header)
+    return (
+      <PlaylistSkeleton
+        topSongs={isArtistTopSongs}
+        fromArtist={openedFromArtist}
+        liked={isLikedSongs}
+      />
+    );
 
   const shufflePlaylist = async () => {
     const store = usePlaybackStore.getState();
@@ -525,18 +533,47 @@ function SortMenu({
   );
 }
 
-function PlaylistSkeleton() {
+/**
+ * Each playlist variant's header is known from the URL before the data
+ * lands, so the skeleton draws the one that is coming: an artist's Top
+ * songs (round cover, pinned search, play counts), a playlist opened
+ * from an artist page (round cover, no buttons), Liked songs (no Share)
+ * or a regular playlist.
+ */
+function PlaylistSkeleton({
+  topSongs,
+  fromArtist,
+  liked,
+}: {
+  topSongs: boolean;
+  fromArtist: boolean;
+  liked: boolean;
+}) {
+  const round = topSongs || fromArtist;
+  const actions = fromArtist
+    ? []
+    : topSongs || liked
+      ? ["w-[77px]", "w-24"]
+      : ["w-[77px]", "w-24", "w-9"];
   return (
-    <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end">
-        <Skeleton className="size-[148px] shrink-0 border border-hairline shadow-lg" />
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-[46px] w-72" />
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-4 w-24" />
-        </div>
+    <>
+      <EntityHeaderSkeleton
+        round={round}
+        subtitle={round}
+        metadata={!round}
+        actions={actions}
+        toolbar={topSongs}
+      />
+      <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
+        {topSongs ? null : (
+          /* The search field and sort button row. */
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 flex-1 rounded-[10px]" />
+            <Skeleton className="h-8 w-[148px] rounded-[9px]" />
+          </div>
+        )}
+        <TrackRowSkeletonList count={10} showPlays={topSongs} />
       </div>
-      <TrackRowSkeletonList count={10} />
-    </div>
+    </>
   );
 }

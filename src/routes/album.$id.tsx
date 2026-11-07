@@ -5,7 +5,7 @@ import { EntityHeader } from "@/components/shared/entity-header";
 import { AlbumMoreMenu } from "@/components/shared/album-menu";
 import { TrackList } from "@/components/shared/track-list";
 import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EntityHeaderSkeleton } from "@/components/layout/entity-page-header";
 import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { usePlaybackStore } from "@/lib/store/playback";
 import { ErrorCard } from "@/components/shared/error-card";
@@ -124,26 +124,19 @@ function AlbumPageView() {
   );
 }
 
-// Mirrors the real hero (EntityPageHeader's HeroLayout) and TrackList
-// row geometry so there's no visible pop when data replaces this:
-// `size-40` cover (never scales up, unlike the old `md:w-56`), `gap-6`
-// row layout, and title/subtitle/metadata bars sized to their real
-// line-heights (text-4xl → h-10, text-sm subtitle → h-5, text-xs
-// metadata → h-4). Rows use the shared zero-gap TrackRowSkeletonList
-// instead of a `gap-8`-spaced stack of bars, matching how the
-// virtualizer actually packs 56px rows with no space between them.
+// The header skeleton shares EntityPageHeader's geometry and the rows
+// share TrackList's grid, so nothing moves when the data lands.
 function AlbumSkeleton() {
   return (
-    <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
-      <div className="flex flex-row items-end gap-6">
-        <Skeleton className="size-[148px] shrink-0 border border-hairline shadow-lg" />
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <Skeleton className="h-[46px] w-72" />
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-4 w-28" />
-        </div>
+    <>
+      <EntityHeaderSkeleton
+        subtitle
+        metadata
+        actions={["w-[77px]", "w-24", "w-9"]}
+      />
+      <div className="flex flex-col gap-8 px-6 pb-6 pt-3">
+        <TrackRowSkeletonList count={8} hideThumbnails hideAlbum />
       </div>
-      <TrackRowSkeletonList count={8} hideThumbnails hideAlbum />
-    </div>
+    </>
   );
 }

@@ -102,6 +102,36 @@ function VideoSourceBadge() {
   );
 }
 
+/** Row height without the 2px gap below it. */
+export const TRACK_ROW_HEIGHT = ROW_SIZE - 2;
+
+/**
+ * Grid template shared by every track row (and `TrackRowSkeleton`) so the
+ * columns line up in a real "table" layout. Duration and Actions use
+ * FIXED widths so separate grids agree on column boundaries — `auto`
+ * would let each size the column to its own content and drift apart.
+ */
+export function trackGridTemplate({
+  showAlbum,
+  showPlays,
+  wideActions,
+}: {
+  showAlbum: boolean;
+  showPlays: boolean;
+  wideActions: boolean;
+}): string {
+  return [
+    "minmax(0,2fr)", // TRACK (thumb/index + title) — 2x weight so long
+    // titles get the breathing room before truncation
+    "minmax(0,1fr)", // ARTIST
+    showAlbum ? "minmax(0,1fr)" : null, // ALBUM
+    showPlays ? "5rem" : "3.5rem", // DURATION or PLAYS — plays is wider
+    wideActions ? "5.75rem" : "4rem", // ACTIONS (rating buttons + more)
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function TrackList({
   tracks,
   hideThumbnails = false,
@@ -273,22 +303,7 @@ export function TrackList({
   // Thumbs up + thumbs down + more is three buttons, the heart two.
   const wideActions = useSettingsStore((s) => s.ratingButtons === "both");
 
-  // Grid template shared by the header row and every track row so the
-  // columns line up in a real "table" layout.
-  // Duration and Actions use FIXED widths so the header grid and the
-  // row grids agree on column boundaries — `auto` would let each
-  // container size the column to its own content (e.g. the word
-  // "Duration" vs. "3:32") and the columns would visually drift apart.
-  const gridTemplate = [
-    "minmax(0,2fr)", // TRACK (thumb/index + title) — 2x weight so long
-    // titles get the breathing room before truncation
-    "minmax(0,1fr)", // ARTIST
-    showAlbum ? "minmax(0,1fr)" : null, // ALBUM
-    showPlays ? "5rem" : "3.5rem", // DURATION or PLAYS — plays is wider
-    wideActions ? "5.75rem" : "4rem", // ACTIONS (rating buttons + more)
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const gridTemplate = trackGridTemplate({ showAlbum, showPlays, wideActions });
 
   if (tracks.length === 0) {
     return (
