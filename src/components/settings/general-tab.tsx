@@ -136,8 +136,8 @@ function BehaviorGroup() {
   const { data: updateSource } = useUpdateSource();
   const systemManaged = updateSource?.kind === "system";
   const managedNote = systemManaged
-    ? systemUpdateGuidance(updateSource.manager, updateSource.helper).channel ===
-      "AUR"
+    ? systemUpdateGuidance(updateSource.manager, updateSource.helper)
+        .channel === "AUR"
       ? `This install is managed by pacman (AUR) — refresh it with ${aurUpdateCmd(updateSource.helper)}.`
       : "This install is managed by your system package manager — fetch new releases from the Releases page."
     : null;
@@ -199,6 +199,7 @@ function BehaviorGroup() {
       <SettingRow
         icon={IconSquareXFilled}
         title={IS_MAC ? "Close to menu bar" : "Close to tray"}
+        settingId="close-to-tray"
         description={
           IS_MAC
             ? "Hide YTubic to the menu bar when you close the window instead of quitting."

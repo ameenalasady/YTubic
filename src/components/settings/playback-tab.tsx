@@ -8,6 +8,7 @@ import {
   IconHeadphonesFilled,
   IconPlayerPlayFilled,
   IconTransitionRightFilled,
+  IconArrowsShuffle2,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -51,6 +52,7 @@ export function PlaybackTab() {
       <BackButtonGroup />
       <Group>
         <ResumeRow />
+        <RadioVarietyRow />
       </Group>
     </TabPane>
   );
@@ -63,27 +65,59 @@ export function PlaybackTab() {
 function CrossfadeRow() {
   const seconds = usePlaybackSettings((s) => s.crossfadeSec);
   const setSeconds = usePlaybackSettings((s) => s.setCrossfadeSec);
+  const bassSwap = usePlaybackSettings((s) => s.mixBassSwap);
+  const setBassSwap = usePlaybackSettings((s) => s.setMixBassSwap);
+  const smartTiming = usePlaybackSettings((s) => s.mixSmartTiming);
+  const setSmartTiming = usePlaybackSettings((s) => s.setMixSmartTiming);
 
   return (
-    <SettingRow
-      icon={IconTransitionRightFilled}
-      title="Crossfade"
-      description="Fade the end of a track into the start of the next one."
-      control={
-        <div className="flex items-center gap-3.5">
-          <Slider
-            value={[seconds]}
-            onValueChange={([v]) => setSeconds(v)}
-            min={0}
-            max={12}
-            step={1}
-            aria-label="Crossfade seconds"
-            className="w-[150px]"
+    <>
+      <SettingRow
+        icon={IconTransitionRightFilled}
+        title="Crossfade"
+        description="Fade the end of a track into the start of the next one."
+        control={
+          <div className="flex items-center gap-3.5">
+            <Slider
+              value={[seconds]}
+              onValueChange={([v]) => setSeconds(v)}
+              min={0}
+              max={30}
+              step={1}
+              aria-label="Crossfade seconds"
+              className="w-[150px]"
+            />
+            <Stepper value={seconds} onChange={setSeconds} min={0} max={30} />
+          </div>
+        }
+      />
+      <SettingRow
+        icon={IconTransitionRightFilled}
+        title="DJ Bass Swap"
+        description="Swap basslines during the crossfade so the two tracks don't clash."
+        control={
+          <Switch
+            checked={bassSwap}
+            onCheckedChange={setBassSwap}
+            disabled={seconds === 0}
+            aria-label="DJ Bass Swap"
           />
-          <Stepper value={seconds} onChange={setSeconds} min={0} max={12} />
-        </div>
-      }
-    />
+        }
+      />
+      <SettingRow
+        icon={IconTransitionRightFilled}
+        title="Smart Mix Timing"
+        description="Start the mix as the outro begins and skip silent intros and endings."
+        control={
+          <Switch
+            checked={smartTiming}
+            onCheckedChange={setSmartTiming}
+            disabled={seconds === 0}
+            aria-label="Smart Mix Timing"
+          />
+        }
+      />
+    </>
   );
 }
 
@@ -177,6 +211,25 @@ function MonoRow() {
       title="Mono Audio"
       description="Play the same audio in both channels."
       control={<Switch checked={on} onCheckedChange={set} />}
+    />
+  );
+}
+
+function RadioVarietyRow() {
+  const on = usePlaybackSettings((s) => s.radioVariety);
+  const set = usePlaybackSettings((s) => s.setRadioVariety);
+  return (
+    <SettingRow
+      icon={IconArrowsShuffle2}
+      title="Varied Radio & Autoplay"
+      description="Mix more tracks into radio and autoplay and shuffle them a bit, so it isn't the same songs every time."
+      control={
+        <Switch
+          checked={on}
+          onCheckedChange={set}
+          aria-label="Varied Radio & Autoplay"
+        />
+      }
     />
   );
 }

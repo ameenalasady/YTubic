@@ -16,6 +16,7 @@ import {
   IconPlaylist,
   IconPlus,
   IconThumbDownFilled,
+  IconTransitionRightFilled,
 } from "@tabler/icons-react";
 import {
   IconHeartOffFilled,
@@ -58,7 +59,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getLikedIdsSet } from "@/components/shared/like-buttons";
-import { fetchRadio } from "@/lib/innertube/radio";
+import { fetchVariedRadio } from "@/lib/innertube/radio-variety";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import {
   addToPlaylist,
@@ -70,6 +71,8 @@ import {
 import { toggleDisliked, toggleLiked } from "@/lib/like-actions";
 import { useSettingsStore } from "@/lib/store/settings";
 import { usePlaybackStore } from "@/lib/store/playback";
+import { usePlaybackSettings } from "@/lib/store/playback-settings";
+import { armFadeInto } from "@/lib/fade-request";
 import type { ShelfItem } from "@/lib/innertube/types";
 
 type TrackContext = { tracks: ShelfItem[]; index: number };
@@ -259,6 +262,8 @@ export function TrackMenuItems({
   const { Item, Separator, Sub, SubTrigger, SubContent } = primitives;
   // With thumbs on every row the rating items would only repeat them.
   const thumbs = useSettingsStore((s) => s.ratingButtons === "both");
+  const crossfadeSec = usePlaybackSettings((s) => s.crossfadeSec);
+  const somethingPlaying = usePlaybackStore((s) => s.playing);
   const {
     isLiked,
     playlists,
@@ -284,6 +289,20 @@ export function TrackMenuItems({
         <IconPlayerPlayFilled />
         Play
       </Item>
+      {crossfadeSec > 0 && somethingPlaying ? (
+        <Item
+          onSelect={() => {
+            // Same as Play, but the engine fades from the current track
+            // into this one over the Settings → Playback crossfade length.
+            armFadeInto();
+            if (context) store().playShelfItems(context.tracks, context.index);
+            else store().playNow(item);
+          }}
+        >
+          <IconTransitionRightFilled />
+          Play with crossfade
+        </Item>
+      ) : null}
       <Item onSelect={() => store().enqueueNext(item)}>
         <IconPlayerTrackNextFilled />
         Play next
@@ -295,8 +314,7 @@ export function TrackMenuItems({
       <Item
         onSelect={async () => {
           try {
-            const radio = await fetchRadio(item.id);
-            const rest = radio.filter((t) => t.id !== item.id);
+            const rest = await fetchVariedRadio(item.id, { limit: 40 });
             store().playShelfItems([item, ...rest], 0);
           } catch {
             store().playNow(item);

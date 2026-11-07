@@ -52,6 +52,17 @@ function parsePanelTracks(json: YtNode): ShelfItem[] {
   return parsePanel(json).tracks;
 }
 
+/** First page of a radio station plus the pointer to the next page. */
+export async function fetchRadioPage(videoId: string): Promise<WatchQueuePage> {
+  return parsePanel(
+    await rawNext({
+      videoId,
+      playlistId: `RDAMVM${videoId}`,
+      isAudioOnly: true,
+    }),
+  );
+}
+
 export async function fetchRadio(videoId: string): Promise<ShelfItem[]> {
   const tracks = parsePanelTracks(
     await rawNext({

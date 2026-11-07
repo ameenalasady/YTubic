@@ -43,6 +43,19 @@ export async function streamUrlFor(videoId: string): Promise<string> {
   return `${base}/stream/${encodeURIComponent(videoId)}`;
 }
 
+/**
+ * URL of the muted picture for a track's video (immersive fullscreen
+ * "Video" mode). The server downloads it on first request, so the first
+ * load takes a few seconds; it is kept for the session only.
+ */
+export async function videoUrlFor(
+  videoId: string,
+  quality: number,
+): Promise<string> {
+  const base = await getStreamBaseUrl();
+  return `${base}/video/${encodeURIComponent(videoId)}?q=${quality}`;
+}
+
 const prefetched = new Set<string>();
 
 /**
@@ -91,7 +104,11 @@ export function clearPrefetchMemo(): void {
 export async function saveTrackMeta(
   videoId: string,
   track:
-    | { title?: string; subtitle?: string; artists?: { id?: string; name: string }[] }
+    | {
+        title?: string;
+        subtitle?: string;
+        artists?: { id?: string; name: string }[];
+      }
     | undefined,
 ): Promise<void> {
   if (!track?.title) return;

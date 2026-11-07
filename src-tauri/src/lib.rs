@@ -3197,6 +3197,243 @@ async fn stream_handler(
     resp
 }
 
+/// Session-only video files kept in the ephemeral pool; older ones are
+/// deleted as new ones finish so watching clips all day cannot fill the disk.
+const VIDEO_CACHE_KEEP: usize = 4;
+
+/// Requested picture height from `?q=`: 720, 1080 or 1440 (default 720).
+fn video_quality(req: &Request) -> u32 {
+    let q = req.uri().query().unwrap_or("");
+    for kv in q.split('&') {
+        let mut it = kv.splitn(2, '=');
+        if it.next() == Some("q") {
+            return match it.next().unwrap_or("") {
+                "1080" => 1080,
+                "1440" => 1440,
+                _ => 720,
+            };
+        }
+    }
+    720
+}
+
+/// yt-dlp format selector for a picture height. H.264 is preferred up to
+/// 1080p (hardware-decoded); above that only VP9/AV1 exist, and VP9 is
+/// tried before AV1, which can be software-decoded and heavy.
+fn video_format(height: u32) -> String {
+    let h = height;
+    if h > 1080 {
+        format!(
+            "bestvideo[height<={h}][vcodec^=vp9][protocol^=http]/bestvideo[height<={h}][protocol^=http]/bestvideo[height<={h}]/best[height<={h}]"
+        )
+    } else {
+        format!(
+            "bestvideo[height<={h}][vcodec^=avc1][protocol^=http]/bestvideo[height<={h}][protocol^=http]/bestvideo[height<={h}]/best[height<={h}]"
+        )
+    }
+}
+
+/// Sniff the container of a cached video file (MP4 vs WebM).
+async fn sniff_video_mime(path: &std::path::Path) -> &'static str {
+    let mut buf = [0u8; 16];
+    if let Ok(mut f) = tokio::fs::File::open(path).await {
+        let _ = f.read(&mut buf).await;
+    }
+    if &buf[4..8] == b"ftyp" {
+        "video/mp4"
+    } else {
+        "video/webm"
+    }
+}
+
+/// Delete all but the `keep` most recently written `*.video.mp4` files.
+async fn prune_video_cache(dir: &std::path::Path, keep: usize) {
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    let mut rd = match tokio::fs::read_dir(dir).await {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        let path = entry.path();
+        let is_video = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.ends_with(".video.mp4"))
+            .unwrap_or(false);
+        if !is_video {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .await
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        files.push((modified, path));
+    }
+    if files.len() <= keep {
+        return;
+    }
+    files.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+    for (_, path) in files.into_iter().skip(keep) {
+        let _ = tokio::fs::remove_file(path).await;
+    }
+}
+
+/// Download the picture (video-only, up to 720p) for the immersive
+/// fullscreen "Video" mode. Same mechanics as `spawn_downloader`, but the
+/// result always lands in the session-only pool as `<id>.video.mp4`, never
+/// in the persistent track cache.
+fn spawn_video_downloader(
+    video_id: String,
+    target_dir: PathBuf,
+    map_key: String,
+    srv: StreamServer,
+    state: Arc<DownloadState>,
+    height: u32,
+) {
+    let downloads = srv.downloads.clone();
+    tokio::spawn(async move {
+        let url = format!("https://www.youtube.com/watch?v={video_id}");
+        let part_path = target_dir.join(format!("{video_id}.{height}p.video.part"));
+        let final_path = target_dir.join(format!("{video_id}.{height}p.video.mp4"));
+        let _ = tokio::fs::create_dir_all(&target_dir).await;
+        let _ = tokio::fs::remove_file(&part_path).await;
+
+        let program = ytdlp::program(&srv.ytdlp_bin);
+
+        // H.264 first (hardware-decoded everywhere), then any other
+        // progressive video-only stream, then a combined format as a last
+        // resort. The element is muted, so audio in the file is harmless.
+        let video_format = video_format(height);
+        let mut attempt =
+            download_attempt(&program, &url, &part_path, &video_format, None, &state).await;
+
+        if !attempt.ok && attempt.age_gated {
+            if let Some(cookies) = write_temp_cookies(&srv.app).await {
+                attempt = download_attempt(
+                    &program,
+                    &url,
+                    &part_path,
+                    &video_format,
+                    Some(cookies.path()),
+                    &state,
+                )
+                .await;
+            }
+        }
+
+        let success = attempt.ok;
+        const MIN_VIDEO_BYTES: u64 = 256 * 1024;
+        let part_size = tokio::fs::metadata(&part_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+        if success && part_size >= MIN_VIDEO_BYTES {
+            if let Err(e) = tokio::fs::rename(&part_path, &final_path).await {
+                eprintln!("[video] rename: {e}");
+                let _ = tokio::fs::remove_file(&part_path).await;
+            } else {
+                eprintln!("[video] cached {video_id} ({part_size} bytes)");
+                prune_video_cache(&target_dir, VIDEO_CACHE_KEEP).await;
+            }
+        } else {
+            eprintln!("[video] download failed or too small for {video_id} ({part_size} bytes)");
+            let _ = tokio::fs::remove_file(&part_path).await;
+        }
+
+        state.complete.store(true, Ordering::Release);
+        state.notify.notify_waiters();
+
+        if success {
+            let downloads_evict = downloads.clone();
+            let key = map_key.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                downloads_evict.lock().await.remove(&key);
+            });
+        } else {
+            downloads.lock().await.remove(&map_key);
+        }
+    });
+}
+
+/// GET /video/:video_id — the muted picture for the immersive fullscreen
+/// "Video" mode. Downloaded in full on first request (like /stream), then
+/// served from disk with Range support.
+async fn video_handler(
+    AxumState(srv): AxumState<StreamServer>,
+    Path(video_id): Path<String>,
+    req: Request,
+) -> Response {
+    if !sanitize_video_id(&video_id) {
+        return (StatusCode::BAD_REQUEST, "invalid videoId").into_response();
+    }
+
+    let height = video_quality(&req);
+    let target_dir = srv.ephemeral_dir.clone();
+    let map_key = format!("v:{video_id}:{height}");
+    let final_path = target_dir.join(format!("{video_id}.{height}p.video.mp4"));
+
+    if !final_path.exists() {
+        let state = {
+            let mut map = srv.downloads.lock().await;
+            if let Some(s) = map.get(&map_key) {
+                s.clone()
+            } else {
+                let s = Arc::new(DownloadState {
+                    complete: Arc::new(AtomicBool::new(false)),
+                    notify: Arc::new(Notify::new()),
+                });
+                map.insert(map_key.clone(), s.clone());
+                drop(map);
+                spawn_video_downloader(
+                    video_id.clone(),
+                    target_dir.clone(),
+                    map_key.clone(),
+                    srv.clone(),
+                    s.clone(),
+                    height,
+                );
+                s
+            }
+        };
+
+        // Video files are an order of magnitude bigger than audio: allow
+        // more time before giving up.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(300);
+        while !state.complete.load(Ordering::Acquire) {
+            if tokio::time::Instant::now() >= deadline {
+                eprintln!("[video] {video_id}: TIMEOUT after 300s");
+                return (StatusCode::GATEWAY_TIMEOUT, "download timeout").into_response();
+            }
+            let notified = state.notify.notified();
+            tokio::pin!(notified);
+            let _ = tokio::time::timeout(Duration::from_secs(5), notified).await;
+        }
+
+        if !final_path.exists() {
+            return (StatusCode::BAD_GATEWAY, "download failed").into_response();
+        }
+    }
+
+    let sniffed_ct = sniff_video_mime(&final_path).await;
+    let mut resp = ServeFile::new(&final_path)
+        .oneshot(req)
+        .await
+        .map(|r| r.into_response())
+        .unwrap_or_else(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("serve: {e}")).into_response()
+        });
+    if resp.status().is_success() || resp.status() == StatusCode::PARTIAL_CONTENT {
+        resp.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static(sniffed_ct),
+        );
+    }
+    resp
+}
+
 /// GET /cover/:filename — serve a cached cover image. Files are placed
 /// here by the `cache_cover` Tauri command. The filename is a hex hash +
 /// extension produced by `url_to_filename`, which is the only way bytes
@@ -3380,6 +3617,7 @@ async fn start_stream_server(
 
     let routes = Router::new()
         .route("/stream/:video_id", get(stream_handler))
+        .route("/video/:video_id", get(video_handler))
         .route("/prefetch/:video_id", get(prefetch_handler))
         .route("/cover/:filename", get(cover_serve_handler))
         .with_state(server);

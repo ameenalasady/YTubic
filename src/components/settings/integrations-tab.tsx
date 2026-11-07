@@ -30,6 +30,7 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
+import { useSettingsDialog } from "@/lib/store/settings-dialog";
 import { useLastfmStore, isLastfmLinked } from "@/lib/store/lastfm";
 import {
   authorizeUrl,
@@ -48,7 +49,12 @@ type IntegrationId = "lastfm" | "discord";
  * cluttering a single long scroll as more integrations are added.
  */
 export function IntegrationsTab() {
-  const [active, setActive] = useState<IntegrationId | null>(null);
+  // Settings search can ask for a drill-in page; consume the request once.
+  const requested = useSettingsDialog((s) => s.integrationPage);
+  const [active, setActive] = useState<IntegrationId | null>(requested);
+  useEffect(() => {
+    if (requested) useSettingsDialog.getState().setIntegrationPage(null);
+  }, [requested]);
 
   if (active === "lastfm") {
     return (
@@ -392,7 +398,8 @@ function LastfmGroup() {
 /* Discord Rich Presence                                               */
 /* ------------------------------------------------------------------ */
 
-const DISCORD_DEVELOPER_PORTAL_URL = "https://discord.com/developers/applications";
+const DISCORD_DEVELOPER_PORTAL_URL =
+  "https://discord.com/developers/applications";
 
 function DiscordGroup() {
   const {
@@ -445,7 +452,11 @@ function DiscordGroup() {
                   : undefined
               }
             >
-              {!enabled ? "Disabled" : configured ? "Enabled" : "Needs Client ID"}
+              {!enabled
+                ? "Disabled"
+                : configured
+                  ? "Enabled"
+                  : "Needs Client ID"}
             </Badge>
             <Switch
               checked={enabled}
@@ -459,7 +470,10 @@ function DiscordGroup() {
         <>
           <div className="flex flex-col gap-3 py-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="discord-client-id" className="text-sm font-medium">
+              <label
+                htmlFor="discord-client-id"
+                className="text-sm font-medium"
+              >
                 Application (Client) ID
               </label>
               <Input
@@ -473,10 +487,10 @@ function DiscordGroup() {
                 spellCheck={false}
               />
               <p className="text-xs text-amber-600 dark:text-amber-500">
-                Pre-filled with YTubic&apos;s own Discord application. Don&apos;t
-                change this unless you know what you&apos;re doing — it only
-                needs to change if you&apos;re intentionally presenting as a
-                different Discord app (e.g. one you registered yourself).
+                Pre-filled with YTubic&apos;s own Discord application.
+                Don&apos;t change this unless you know what you&apos;re doing —
+                it only needs to change if you&apos;re intentionally presenting
+                as a different Discord app (e.g. one you registered yourself).
               </p>
             </div>
             <button
@@ -488,7 +502,10 @@ function DiscordGroup() {
               <ExternalLinkIcon className="size-3" />
             </button>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="discord-presence-name" className="text-sm font-medium">
+              <label
+                htmlFor="discord-presence-name"
+                className="text-sm font-medium"
+              >
                 Presence name
               </label>
               <Input

@@ -6,6 +6,7 @@ import {
   IconArrowsShuffle2,
   IconPlayerPlayFilled,
   IconPlayerTrackNextFilled,
+  IconTransitionRightFilled,
   IconUserFilled,
 } from "@tabler/icons-react";
 import {
@@ -33,8 +34,10 @@ import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { fetchAlbum } from "@/lib/innertube/album";
 import { copyLink } from "@/lib/clipboard";
 import { universalShareUrl } from "@/lib/deep-link";
-import { fetchRadio } from "@/lib/innertube/radio";
+import { fetchVariedRadio } from "@/lib/innertube/radio-variety";
 import { usePlaybackStore } from "@/lib/store/playback";
+import { usePlaybackSettings } from "@/lib/store/playback-settings";
+import { armFadeInto } from "@/lib/fade-request";
 import type { AlbumPage, ShelfItem } from "@/lib/innertube/types";
 
 // Album rows carry no per-track thumbnail (the cover lives at the album
@@ -81,12 +84,15 @@ export function useAlbumMenuController(albumId: string, album?: AlbumPage) {
     }
   };
 
-  const play = async (shuffle: boolean) => {
+  const play = async (shuffle: boolean, crossfade = false) => {
     const a = await resolve();
     if (!a) return;
     const items = withCover(a);
     if (items.length === 0) return;
     const store = usePlaybackStore.getState();
+    // Armed only now, right before the commit: the album may have had to
+    // be fetched first, and the request expires within moments.
+    if (crossfade) armFadeInto();
     store.playShelfItems(
       items,
       shuffle ? Math.floor(Math.random() * items.length) : 0,
@@ -123,10 +129,8 @@ export function useAlbumMenuController(albumId: string, album?: AlbumPage) {
     const seed = items[0];
     if (!seed) return;
     try {
-      const radio = await fetchRadio(seed.id);
-      usePlaybackStore
-        .getState()
-        .playShelfItems([seed, ...radio.filter((t) => t.id !== seed.id)], 0);
+      const radio = await fetchVariedRadio(seed.id, { limit: 40 });
+      usePlaybackStore.getState().playShelfItems([seed, ...radio], 0);
     } catch {
       void play(false);
     }
@@ -170,6 +174,8 @@ export function AlbumMenuItems({
   const { Item, Separator } = primitives;
   const { play, playNext, addToQueue, startRadio, goToArtist, share } =
     controller;
+  const crossfadeSec = usePlaybackSettings((s) => s.crossfadeSec);
+  const somethingPlaying = usePlaybackStore((s) => s.playing);
 
   return (
     <>
@@ -177,6 +183,12 @@ export function AlbumMenuItems({
         <IconPlayerPlayFilled />
         Play
       </Item>
+      {crossfadeSec > 0 && somethingPlaying ? (
+        <Item onSelect={() => void play(false, true)}>
+          <IconTransitionRightFilled />
+          Play with crossfade
+        </Item>
+      ) : null}
       <Item onSelect={() => void play(true)}>
         <IconArrowsShuffle2 />
         Shuffle play

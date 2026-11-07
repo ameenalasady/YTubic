@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { IconCheck } from "@tabler/icons-react";
 import { IconMusicFilled } from "@/components/shared/filled-icons";
-import { IconDotsVertical, IconLoader2, IconVideoFilled } from "@tabler/icons-react";
+import {
+  IconDotsVertical,
+  IconLoader2,
+  IconVideoFilled,
+} from "@tabler/icons-react";
 import { playerIconButton } from "@/components/layout/player-chrome";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -159,7 +163,11 @@ function SourceMenuItems({ track }: { track: QueueTrack }) {
     try {
       const artistsLine = track.artists?.map((a) => a.name).join(" ") ?? "";
       const query = `${track.title} ${artistsLine}`.trim();
-      const altId = await findAlternateVideoId(query, track.videoId, target);
+      const altId = await findAlternateVideoId(query, track.videoId, target, {
+        title: track.title,
+        artists: track.artists?.map((a) => a.name),
+        duration: track.duration,
+      });
       if (!altId) {
         toast.error(
           target === "video"

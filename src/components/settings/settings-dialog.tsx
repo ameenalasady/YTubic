@@ -1,4 +1,10 @@
-import { useEffect, useState, type ComponentType } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   IconAdjustmentsFilled,
@@ -17,6 +23,16 @@ import {
   frostedDialogPanel,
 } from "@/components/ui/dialog";
 import { useUpdateStore } from "@/lib/store/update";
+import {
+  MIN_QUERY_LENGTH,
+  entryId,
+  searchSettings,
+  type SettingEntry,
+} from "@/components/settings/settings-index";
+import {
+  SettingsSearchField,
+  SettingsSearchResults,
+} from "@/components/settings/settings-search";
 import { GeneralTab } from "@/components/settings/general-tab";
 import { PlaybackTab } from "@/components/settings/playback-tab";
 import { AppearanceTab } from "@/components/settings/appearance-tab";
@@ -53,6 +69,44 @@ export function SettingsDialog() {
   const setOpen = useSettingsDialog((s) => s.setOpen);
   const tab = useSettingsDialog((s) => s.tab);
   const setTab = useSettingsDialog((s) => s.setTab);
+
+  // Settings search: once the query is long enough the right pane shows
+  // matching rows from every tab; picking one jumps to it and flashes it.
+  const [query, setQuery] = useState("");
+  const [target, setTarget] = useState<string | null>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const searching = query.trim().length >= MIN_QUERY_LENGTH;
+  const matches = useMemo(
+    () =>
+      searchSettings(query, (t) => TABS.find((x) => x.id === t)?.label ?? t),
+    [query],
+  );
+  const pick = (entry: SettingEntry) => {
+    useSettingsDialog.getState().setIntegrationPage(entry.page ?? null);
+    setTab(entry.tab);
+    setQuery("");
+    setTarget(entryId(entry));
+  };
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+  useEffect(() => {
+    if (!target || searching) return;
+    const t = window.setTimeout(() => {
+      const el = scrollerRef.current?.querySelector<HTMLElement>(
+        `[data-setting="${CSS.escape(target)}"]`,
+      );
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.remove("setting-flash");
+        void el.offsetWidth; // restart the animation if it is already running
+        el.classList.add("setting-flash");
+        window.setTimeout(() => el.classList.remove("setting-flash"), 3000);
+      }
+      setTarget(null);
+    }, 90);
+    return () => window.clearTimeout(t);
+  }, [target, searching, tab]);
 
   // Footer of the tab rail. Cheap enough to read on open and it saves
   // a trip to About just to check what you're running.
@@ -93,16 +147,26 @@ export function SettingsDialog() {
           <DialogTitle className="flex h-7 items-center px-1.5 text-xl font-semibold leading-none tracking-[-0.015em] text-t1">
             Settings
           </DialogTitle>
-          <nav className="flex flex-col gap-0.5">
+          <SettingsSearchField
+            value={query}
+            onChange={setQuery}
+            onSubmit={() => {
+              if (searching && matches[0]) pick(matches[0].entry);
+            }}
+          />
+          <nav className="-mt-2 flex flex-col gap-0.5">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setTab(id)}
-                aria-current={tab === id}
+                onClick={() => {
+                  setQuery("");
+                  setTab(id);
+                }}
+                aria-current={tab === id && !searching}
                 className={cn(
                   "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] transition-colors duration-[140ms]",
-                  tab === id
+                  tab === id && !searching
                     ? "bg-w070 font-semibold text-t1"
                     : "font-medium text-t5 hover:bg-w050 hover:text-t3",
                 )}
@@ -135,7 +199,9 @@ export function SettingsDialog() {
               on the same row. It doesn't scroll away. */}
           <div className="flex items-center gap-4 border-b border-w055 p-5">
             <h3 className="text-xl font-semibold leading-none tracking-[-0.015em] text-t1">
-              {TABS.find((t) => t.id === tab)?.label}
+              {searching
+                ? "Search results"
+                : TABS.find((t) => t.id === tab)?.label}
             </h3>
             <button
               type="button"
@@ -169,13 +235,24 @@ export function SettingsDialog() {
               the removal and "compensates" scrollTop, which unpins the
               toolbar and loops (scroll-down felt like being thrown
               back up). */}
-          <div className="app-scroll min-w-0 flex-1 overflow-y-auto px-5 pb-[22px] pt-1 [overflow-anchor:none] [scrollbar-gutter:stable]">
-            {tab === "general" && <GeneralTab />}
-            {tab === "playback" && <PlaybackTab />}
-            {tab === "appearance" && <AppearanceTab />}
-            {tab === "home" && <HomeTab />}
-            {tab === "storage" && <StorageTab />}
-            {tab === "integrations" && <IntegrationsTab />}
+          <div
+            ref={scrollerRef}
+            className="app-scroll min-w-0 flex-1 overflow-y-auto px-5 pb-[22px] pt-1 [overflow-anchor:none] [scrollbar-gutter:stable]"
+          >
+            {searching ? (
+              <SettingsSearchResults
+                query={query}
+                matches={matches}
+                tabs={TABS}
+                onPick={pick}
+              />
+            ) : null}
+            {!searching && tab === "general" && <GeneralTab />}
+            {!searching && tab === "playback" && <PlaybackTab />}
+            {!searching && tab === "appearance" && <AppearanceTab />}
+            {!searching && tab === "home" && <HomeTab />}
+            {!searching && tab === "storage" && <StorageTab />}
+            {!searching && tab === "integrations" && <IntegrationsTab />}
           </div>
         </div>
       </DialogContent>

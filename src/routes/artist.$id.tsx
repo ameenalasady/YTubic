@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchArtist, setArtistSubscribed } from "@/lib/innertube/artist";
-import { fetchRadio, fetchWatchQueue } from "@/lib/innertube/radio";
+import { fetchWatchQueue } from "@/lib/innertube/radio";
+import { fetchVariedRadio } from "@/lib/innertube/radio-variety";
 import { EntityHeader } from "@/components/shared/entity-header";
 import { ExpandableText } from "@/components/shared/expandable-text";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
@@ -181,7 +182,10 @@ function ArtistActions({ artist }: { artist: ArtistPage }) {
       const tracks = target.playlistId
         ? await fetchWatchQueue(target.playlistId, target.videoId)
         : target.videoId
-          ? await fetchRadio(target.videoId)
+          ? await fetchVariedRadio(target.videoId, {
+              limit: 40,
+              includeSeed: true,
+            })
           : [];
       if (tracks.length) {
         usePlaybackStore.getState().playShelfItems(tracks, 0);

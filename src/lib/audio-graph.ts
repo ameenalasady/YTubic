@@ -22,6 +22,9 @@ type SinkCapable = { setSinkId?: (id: string) => Promise<void> };
 
 const dbToGain = (db: number) => 10 ** (db / 20);
 
+/** How far the bass of a track is pulled down while it is not "on deck". */
+const MIX_BASS_CUT_DB = -32;
+
 export class AudioGraph {
   readonly ctx: AudioContext;
   private readonly head: GainNode;
@@ -31,6 +34,8 @@ export class AudioGraph {
   private readonly tail: GainNode;
   private normalize = false;
   private readonly sources = new WeakSet<HTMLMediaElement>();
+  /** Per-element low shelf, used to swap basslines during a DJ mix. */
+  private readonly decks = new Map<HTMLMediaElement, BiquadFilterNode>();
 
   constructor() {
     const ctx = new AudioContext({ latencyHint: "playback" });
@@ -84,7 +89,47 @@ export class AudioGraph {
   attach(el: HTMLMediaElement): void {
     if (this.sources.has(el)) return;
     this.sources.add(el);
-    this.ctx.createMediaElementSource(el).connect(this.head);
+    const bass = this.ctx.createBiquadFilter();
+    bass.type = "lowshelf";
+    bass.frequency.value = 220;
+    bass.gain.value = 0;
+    this.ctx.createMediaElementSource(el).connect(bass);
+    bass.connect(this.head);
+    this.decks.set(el, bass);
+  }
+
+  /**
+   * DJ-style bass swap across a crossfade of `seconds`: the outgoing
+   * track's low end is pulled out first (around the 20-50 % mark), then
+   * the incoming track's bass opens up (50-75 %), so the two basslines
+   * never stack on top of each other. Scheduled on the audio clock.
+   */
+  swapBass(
+    outgoing: HTMLMediaElement,
+    incoming: HTMLMediaElement,
+    seconds: number,
+  ): void {
+    const out = this.decks.get(outgoing);
+    const inn = this.decks.get(incoming);
+    if (!out || !inn) return;
+    const t = this.ctx.currentTime;
+    out.gain.cancelScheduledValues(t);
+    out.gain.setValueAtTime(0, t);
+    out.gain.setValueAtTime(0, t + seconds * 0.2);
+    out.gain.linearRampToValueAtTime(MIX_BASS_CUT_DB, t + seconds * 0.5);
+    inn.gain.cancelScheduledValues(t);
+    inn.gain.setValueAtTime(MIX_BASS_CUT_DB, t);
+    inn.gain.setValueAtTime(MIX_BASS_CUT_DB, t + seconds * 0.5);
+    inn.gain.linearRampToValueAtTime(0, t + seconds * 0.75);
+  }
+
+  /** Restore full bass on every deck (mix finished or cancelled). */
+  resetBass(): void {
+    const t = this.ctx.currentTime;
+    for (const f of this.decks.values()) {
+      f.gain.cancelScheduledValues(t);
+      f.gain.setTargetAtTime(0, t, 0.03);
+    }
   }
 
   /** Autoplay policy can leave the context suspended; call around play(). */

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-
+import { settingSlug } from "@/components/settings/settings-index";
 
 /**
  * Shared building blocks for the settings dialog tabs — the same
@@ -12,26 +12,30 @@ import { cn } from "@/lib/utils";
 /** Cluster of related rows. No card chrome — settings read as one
  *  flat list, rows separated by hairline dividers only. */
 export function Group({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex flex-col divide-y divide-w060">{children}</div>
-  );
+  return <div className="flex flex-col divide-y divide-w060">{children}</div>;
 }
 
 export function SettingRow({
   icon: Icon,
   iconClassName,
   title,
+  settingId,
   description,
   control,
 }: {
   icon: LucideIcon;
   iconClassName?: string;
   title: string;
+  /** Stable id the settings search scrolls to; defaults to the title's slug. */
+  settingId?: string;
   description?: ReactNode;
   control?: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3.5 py-4">
+    <div
+      data-setting={settingId ?? settingSlug(title)}
+      className="flex items-center gap-3.5 rounded-[10px] py-4"
+    >
       {/* The icon sits on the same resting fill as the switch and the
           segmented track, so a row reads as one family of surfaces. */}
       <div className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-w070 bg-w050">
@@ -59,7 +63,5 @@ export function SettingRow({
  *  The first row keeps its own top padding: the design leaves the list
  *  breathing under the header rule rather than butting against it. */
 export function TabPane({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex flex-col divide-y divide-w060">{children}</div>
-  );
+  return <div className="flex flex-col divide-y divide-w060">{children}</div>;
 }

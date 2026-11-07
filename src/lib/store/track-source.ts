@@ -67,8 +67,14 @@ export const useTrackSourceStore = create<State>()(
               ? { song: knownId, video: altId, selected: "song" }
               : { song: altId, video: knownId, selected: "video" };
           // Alias both ids at the same object so `byVideoId[song]` and
-          // `byVideoId[video]` always agree.
-          const next = { ...s.byVideoId, [knownId]: updated, [altId]: updated };
+          // `byVideoId[video]` always agree. Never claim an id that already
+          // belongs to a different track's record: that would make this
+          // track's pick leak into that track (wrong audio when it plays).
+          const claimed = s.byVideoId[altId];
+          const taken =
+            !!claimed && claimed !== existing && claimed.song !== updated.song;
+          const next = { ...s.byVideoId, [knownId]: updated };
+          if (!taken) next[altId] = updated;
           if (existing?.song) next[existing.song] = updated;
           if (existing?.video) next[existing.video] = updated;
           return { byVideoId: capByVideoId(next) };
@@ -88,7 +94,16 @@ export const useTrackSourceStore = create<State>()(
           return { byVideoId: next };
         }),
     }),
-    { name: "ytm-track-source", storage: createJSONStorage(() => safeIdbStorage) },
+    {
+      name: "ytm-track-source",
+      storage: createJSONStorage(() => safeIdbStorage),
+      // v1: the first Video lookup took the top search hit unchecked, so
+      // wrong pairings were saved (a cover, a different song). Those cached
+      // ids would keep playing the wrong audio, so start from a clean slate;
+      // the stricter lookup re-resolves tracks on their next switch.
+      version: 1,
+      migrate: () => ({ byVideoId: {} }),
+    },
   ),
 );
 

@@ -24,6 +24,13 @@ export const EQ_PRESETS: Record<Exclude<EqPreset, "custom">, number[]> = {
 type State = {
   /** Seconds of overlap between tracks. 0 = off. */
   crossfadeSec: number;
+  /** During a crossfade, swap basslines DJ-style instead of a plain blend. */
+  mixBassSwap: boolean;
+  /** Start the crossfade as the outro begins and skip silent intros. */
+  mixSmartTiming: boolean;
+  /** Radio and autoplay mix in more tracks and shuffle them a bit, instead
+   *  of returning the same list every time. */
+  radioVariety: boolean;
   /** Even out loudness between tracks. */
   normalizeVolume: boolean;
   eqEnabled: boolean;
@@ -43,6 +50,9 @@ type State = {
    *  not, and this is the switch for it. */
   resumePlayback: boolean;
   setCrossfadeSec: (v: number) => void;
+  setMixBassSwap: (v: boolean) => void;
+  setMixSmartTiming: (v: boolean) => void;
+  setRadioVariety: (v: boolean) => void;
   setNormalizeVolume: (v: boolean) => void;
   setEqEnabled: (v: boolean) => void;
   setEqPreset: (v: EqPreset) => void;
@@ -78,6 +88,9 @@ export const usePlaybackSettings = create<State>()(
   persist(
     (set) => ({
       crossfadeSec: 0,
+      mixBassSwap: true,
+      mixSmartTiming: true,
+      radioVariety: true,
       normalizeVolume: false,
       eqEnabled: false,
       eqPreset: "flat",
@@ -89,8 +102,11 @@ export const usePlaybackSettings = create<State>()(
       resumePlayback: true,
       setCrossfadeSec: (crossfadeSec) =>
         set({
-          crossfadeSec: Math.min(12, Math.max(0, Math.round(crossfadeSec))),
+          crossfadeSec: Math.min(30, Math.max(0, Math.round(crossfadeSec))),
         }),
+      setMixBassSwap: (mixBassSwap) => set({ mixBassSwap }),
+      setMixSmartTiming: (mixSmartTiming) => set({ mixSmartTiming }),
+      setRadioVariety: (radioVariety) => set({ radioVariety }),
       setNormalizeVolume: (normalizeVolume) => set({ normalizeVolume }),
       setEqEnabled: (eqEnabled) => set({ eqEnabled }),
       setEqPreset: (eqPreset) => set({ eqPreset }),

@@ -8,9 +8,12 @@ import { fetchLikedSongs } from "@/lib/innertube/library";
 import type { ShelfItem } from "@/lib/innertube/types";
 import { getLikedIdsSet } from "@/components/shared/like-buttons";
 import { toggleLiked } from "@/lib/like-actions";
-import { fetchRadio, fetchWatchQueueContinuation } from "@/lib/innertube/radio";
+import { fetchWatchQueueContinuation } from "@/lib/innertube/radio";
+import { fetchVariedRadio } from "@/lib/innertube/radio-variety";
 import { prefetchStream, saveTrackMeta, streamUrlFor } from "@/lib/stream";
 import { AudioGraph, canSelectOutputDevice } from "@/lib/audio-graph";
+import { analyzeTrack, peekAnalysis, planMix } from "@/lib/track-analysis";
+import { consumeFadeInto } from "@/lib/fade-request";
 import { usePlaybackStore, type QueueTrack } from "@/lib/store/playback";
 import { eqGains, usePlaybackSettings } from "@/lib/store/playback-settings";
 // Fork: Discord toggle lives in the dedicated discord store (not settings).
@@ -51,6 +54,9 @@ import { IS_LINUX, IS_WINDOWS } from "@/lib/platform";
 
 /** Start loading the next track this long before the crossfade begins. */
 const CROSSFADE_PRELOAD_LEAD_SEC = 8;
+/** Length of the ramp that hands playback to the other source on a
+ *  Song ↔ Video switch: just long enough to avoid a click. */
+const SOURCE_SWITCH_FADE_SEC = 0.12;
 /** Fade ramp resolution. */
 const CROSSFADE_TICK_MS = 40;
 
@@ -96,6 +102,12 @@ export function useAudioEngine() {
   } | null>(null);
   // Guard against stale stream resolutions when the user skips mid-fetch.
   const resolveTokenRef = useRef(0);
+  // The queue slot the resolve effect last handled, and the stream id that
+  // is actually loaded in the active element. Together they tell a Song ↔
+  // Video switch on the *same* track apart from a real track change, so the
+  // switch can carry the playback position over instead of restarting.
+  const lastTrackRef = useRef<{ videoId: string; index: number } | null>(null);
+  const loadedStreamRef = useRef<string | null>(null);
   // Counts how many tracks have failed in a row without a successful
   // play in between. Reset to 0 on `playing`. Used to short-circuit
   // auto-skip after a few consecutive failures so we don't burn through
@@ -174,6 +186,22 @@ export function useAudioEngine() {
     f.from.removeAttribute("src");
     f.from.load();
     f.to.volume = elementVolume(usePlaybackStore.getState().volume);
+    graphRef.current?.resetBass();
+  };
+
+  /** Run the equal-power ramp between a fade's two elements; ends the
+   *  fade (silencing the outgoing one) when it completes. */
+  const beginRamp = (fade: Fade, seconds: number, onDone: () => void) => {
+    const started = performance.now();
+    const ms = seconds * 1000;
+    fade.timer = window.setInterval(() => {
+      const base = elementVolume(usePlaybackStore.getState().volume);
+      const t = Math.min(1, (performance.now() - started) / ms);
+      // Equal-power ramp: the sum of the two stays at a steady loudness.
+      fade.from.volume = base * Math.cos((t * Math.PI) / 2);
+      fade.to.volume = base * Math.sin((t * Math.PI) / 2);
+      if (t >= 1) onDone();
+    }, CROSSFADE_TICK_MS);
   };
 
   /** Build the WebAudio graph on first need and route both elements
@@ -210,7 +238,8 @@ export function useAudioEngine() {
      * little ahead, then, once it has buffered, start the ramp.
      */
     const maybeCrossfade = (el: HTMLAudioElement) => {
-      const cf = usePlaybackSettings.getState().crossfadeSec;
+      const ps = usePlaybackSettings.getState();
+      const cf = ps.crossfadeSec;
       if (cf <= 0 || fadeRef.current) return;
       const s = store();
       const nextIndex = s.index + 1;
@@ -222,6 +251,23 @@ export function useAudioEngine() {
       const dur = el.duration;
       if (!Number.isFinite(dur) || dur <= 0) return;
       const remaining = dur - el.currentTime;
+
+      // Smart timing: once the outgoing track has been analysed, start the
+      // ramp as its outro begins and end it where the audible content
+      // ends. Until then (or if analysis fails) the fixed length applies.
+      let mixStart = cf; // seconds before the end at which the ramp begins
+      let mixSec = cf;
+      const curSrc = el.currentSrc || el.src;
+      if (ps.mixSmartTiming && curSrc) {
+        const a = peekAnalysis(curSrc);
+        if (a === undefined) void analyzeTrack(curSrc);
+        else if (a) {
+          const plan = planMix(a, dur, cf);
+          mixStart = plan.startRemaining;
+          mixSec = plan.seconds;
+        }
+      }
+
       const nextTrack = s.queue[nextIndex];
       const nextStreamId = resolveStreamId(
         nextTrack.videoId,
@@ -236,7 +282,10 @@ export function useAudioEngine() {
         clearPending();
       }
 
-      if (!pendingRef.current && remaining <= cf + CROSSFADE_PRELOAD_LEAD_SEC) {
+      if (
+        !pendingRef.current &&
+        remaining <= mixStart + CROSSFADE_PRELOAD_LEAD_SEC
+      ) {
         const standby = standbyRef.current;
         // Fork note: upstream's Premium gate removed — this fork streams
         // without a Premium check (see docs "removes the Premium playback gate").
@@ -255,6 +304,9 @@ export function useAudioEngine() {
             p.src = src;
             standby.src = src;
             standby.load();
+            if (usePlaybackSettings.getState().mixSmartTiming) {
+              void analyzeTrack(src);
+            }
           })
           .catch(() => {
             if (pendingRef.current === p) pendingRef.current = null;
@@ -265,10 +317,10 @@ export function useAudioEngine() {
       const ready = pendingRef.current;
       if (
         ready?.src &&
-        remaining <= cf &&
+        remaining <= mixStart &&
         ready.el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
       ) {
-        startCrossfade(el, ready, cf);
+        startCrossfade(el, ready, mixSec);
       }
     };
 
@@ -293,19 +345,24 @@ export function useAudioEngine() {
       };
       store().next();
       graphRef.current?.resume();
+      const ps = usePlaybackSettings.getState();
+      // Skip a silent intro on the incoming track, if it has been analysed.
+      if (ps.mixSmartTiming && next.src) {
+        const a = peekAnalysis(next.src);
+        if (a && a.introStart >= 0.3) {
+          try {
+            to.currentTime = a.introStart;
+          } catch {
+            /* not seekable yet: start from the top */
+          }
+        }
+      }
+      if (ps.mixBassSwap) graphRef.current?.swapBass(from, to, seconds);
       void to.play().catch(() => {});
 
-      const started = performance.now();
-      const ms = seconds * 1000;
-      const timer = window.setInterval(() => {
-        const base = elementVolume(store().volume);
-        const t = Math.min(1, (performance.now() - started) / ms);
-        // Equal-power ramp: the sum of the two stays at a steady loudness.
-        from.volume = base * Math.cos((t * Math.PI) / 2);
-        to.volume = base * Math.sin((t * Math.PI) / 2);
-        if (t >= 1) cancelFade();
-      }, CROSSFADE_TICK_MS);
-      fadeRef.current = { from, to, timer };
+      const fade: Fade = { from, to, timer: 0 };
+      fadeRef.current = fade;
+      beginRamp(fade, seconds, cancelFade);
     };
 
     const onTimeUpdate = (e: Event) => {
@@ -450,6 +507,19 @@ export function useAudioEngine() {
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
+    // Same queue slot as last time, but a different stream id than the one
+    // loaded: the user flipped Song ↔ Video on the playing track.
+    const prevTrack = lastTrackRef.current;
+    lastTrackRef.current = videoId !== undefined ? { videoId, index } : null;
+    const loadedId = loadedStreamRef.current;
+    const isSourceSwitch =
+      !!prevTrack &&
+      videoId !== undefined &&
+      prevTrack.videoId === videoId &&
+      prevTrack.index === index &&
+      !!streamVideoId &&
+      !!loadedId &&
+      loadedId !== streamVideoId;
     // A crossfade already has this track playing on the (now active)
     // element: adopt it rather than reloading. The outgoing element keeps
     // fading in the background.
@@ -461,6 +531,7 @@ export function useAudioEngine() {
       adopt.index === index &&
       adopt.streamVideoId === streamVideoId
     ) {
+      loadedStreamRef.current = streamVideoId;
       const st = usePlaybackStore.getState();
       st.setStreamUrl(adopt.src);
       st.setStatus("ready");
@@ -473,6 +544,184 @@ export function useAudioEngine() {
       );
       return;
     }
+    // "Play now with crossfade" (track menu): another track is playing and
+    // the user asked to fade straight into the new one. The new track loads
+    // on the standby element; the roles swap immediately (so the outgoing
+    // element's events stop driving the store), and the ramp starts once
+    // the newcomer is actually audible. Cancelling (skip, pause) goes
+    // through the ordinary cancelFade, which silences the outgoing element.
+    const fadeSec = usePlaybackSettings.getState().crossfadeSec;
+    if (
+      consumeFadeInto() &&
+      streamVideoId &&
+      fadeSec > 0 &&
+      !el.paused &&
+      el.currentSrc &&
+      standbyRef.current
+    ) {
+      cancelFade();
+      clearPending();
+      const from = el;
+      const to = standbyRef.current;
+      const st = usePlaybackStore.getState();
+      const token = ++resolveTokenRef.current;
+      audioRef.current = to;
+      standbyRef.current = from;
+      loadedStreamRef.current = streamVideoId;
+      to.muted = st.muted;
+      to.volume = 0;
+      st.setStatus("loading");
+      void saveTrackMeta(
+        streamVideoId,
+        st.index >= 0 ? st.queue[st.index] : undefined,
+      );
+      const fade: Fade = { from, to, timer: 0 };
+      fadeRef.current = fade;
+      streamUrlFor(streamVideoId)
+        .then((src) => {
+          if (token !== resolveTokenRef.current) return;
+          to.src = src;
+          usePlaybackStore.getState().setStreamUrl(src);
+          to.load();
+          graphRef.current?.resume();
+          to.addEventListener(
+            "playing",
+            () => {
+              if (token !== resolveTokenRef.current) return;
+              if (fadeRef.current !== fade) return;
+              if (usePlaybackSettings.getState().mixBassSwap) {
+                graphRef.current?.swapBass(from, to, fadeSec);
+              }
+              beginRamp(fade, fadeSec, cancelFade);
+            },
+            { once: true },
+          );
+          void to.play().catch((e) => {
+            if (e?.name === "AbortError") return;
+            usePlaybackStore
+              .getState()
+              .setStatus("error", e?.message ?? String(e));
+          });
+        })
+        .catch((e: Error) => {
+          if (token !== resolveTokenRef.current) return;
+          cancelFade();
+          usePlaybackStore.getState().setStatus("error", e.message);
+          usePlaybackStore.getState().setPlaying(false);
+        });
+      return;
+    }
+    // Song ↔ Video on the track that is playing right now: keep the old
+    // source audible while the new one loads on the standby element, seek
+    // it to the same position, start it silently, line it up with the old
+    // one, and only then swap with a very short ramp. There is never a
+    // silent gap, and the position carries over.
+    if (
+      isSourceSwitch &&
+      streamVideoId &&
+      standbyRef.current &&
+      !el.paused &&
+      el.currentSrc &&
+      !el.error &&
+      el.readyState >= 2
+    ) {
+      cancelFade();
+      clearPending();
+      const from = el;
+      const to = standbyRef.current;
+      const newId = streamVideoId;
+      const token = ++resolveTokenRef.current;
+      to.muted = from.muted;
+      to.volume = 0;
+      const fail = () => {
+        if (token !== resolveTokenRef.current) return;
+        to.removeAttribute("src");
+        to.load();
+        toast.error(
+          "Couldn't load that version, still playing the current one",
+        );
+      };
+      streamUrlFor(newId)
+        .then((src) => {
+          if (token !== resolveTokenRef.current) return;
+          let swapped = false;
+          const swap = () => {
+            if (swapped || token !== resolveTokenRef.current) return;
+            swapped = true;
+            const st = usePlaybackStore.getState();
+            audioRef.current = to;
+            standbyRef.current = from;
+            loadedStreamRef.current = newId;
+            st.setStreamUrl(src);
+            if (Number.isFinite(to.duration) && to.duration > 0) {
+              st.setDuration(to.duration);
+            }
+            graphRef.current?.resume();
+            if (st.playing) {
+              const fade: Fade = { from, to, timer: 0 };
+              fadeRef.current = fade;
+              beginRamp(fade, SOURCE_SWITCH_FADE_SEC, cancelFade);
+            } else {
+              // Paused while it loaded: swap in place, no ramp.
+              to.pause();
+              to.volume = elementVolume(st.volume);
+              from.pause();
+              from.removeAttribute("src");
+              from.load();
+            }
+          };
+          to.addEventListener("error", fail, { once: true });
+          to.addEventListener(
+            "loadedmetadata",
+            () => {
+              if (token !== resolveTokenRef.current) return;
+              const limit = Number.isFinite(to.duration)
+                ? Math.max(0, to.duration - 0.5)
+                : Infinity;
+              to.currentTime = Math.min(from.currentTime, limit);
+            },
+            { once: true },
+          );
+          to.addEventListener(
+            "seeked",
+            () => {
+              if (token !== resolveTokenRef.current) return;
+              void to.play().catch(fail);
+            },
+            { once: true },
+          );
+          to.addEventListener(
+            "playing",
+            () => {
+              if (token !== resolveTokenRef.current) return;
+              // `from` kept playing while this loaded: close the gap.
+              const target = from.currentTime + 0.05;
+              if (Math.abs(to.currentTime - target) > 0.08) {
+                to.addEventListener("seeked", swap, { once: true });
+                window.setTimeout(swap, 1500);
+                to.currentTime = target;
+              } else {
+                swap();
+              }
+            },
+            { once: true },
+          );
+          to.src = src;
+          to.load();
+        })
+        .catch(fail);
+      return;
+    }
+    // A switch that cannot be done seamlessly (paused, or the element is
+    // not playable): fall through to a normal load, but keep the position.
+    if (isSourceSwitch) {
+      const pos = el.currentSrc
+        ? el.currentTime
+        : usePlaybackStore.getState().position;
+      if (pos > 0.5 && videoId !== undefined) {
+        resumeRef.current = { videoId, index, seconds: pos };
+      }
+    }
     // Any other track change ends a fade and discards the preload.
     cancelFade();
     clearPending();
@@ -480,6 +729,7 @@ export function useAudioEngine() {
     // playing through the streamUrlFor() round-trip (~50–500 ms), so the
     // user hears the tail of track A bleed into the start of track B.
     el.pause();
+    loadedStreamRef.current = null;
     if (!streamVideoId) {
       el.removeAttribute("src");
       el.load();
@@ -520,6 +770,7 @@ export function useAudioEngine() {
           console.debug("[audio] setting src for", videoId, "→", src);
         }
         el.src = src;
+        loadedStreamRef.current = streamVideoId;
         usePlaybackStore.getState().setStreamUrl(src);
         el.load();
         // First load of the track the last session ended on: pick up
@@ -614,19 +865,32 @@ export function useAudioEngine() {
   // graph is built the first time any of them is switched on (or an output
   // device is chosen) and stays for the session; while all are off it is
   // never built, so a plain <audio> path remains the default.
-  const { eqEnabled, eqPreset, eqCustomGains, monoAudio, normalizeVolume } =
-    usePlaybackSettings(
-      useShallow((s) => ({
-        eqEnabled: s.eqEnabled,
-        eqPreset: s.eqPreset,
-        eqCustomGains: s.eqCustomGains,
-        monoAudio: s.monoAudio,
-        normalizeVolume: s.normalizeVolume,
-      })),
-    );
+  const {
+    eqEnabled,
+    eqPreset,
+    eqCustomGains,
+    monoAudio,
+    normalizeVolume,
+    crossfadeSec,
+    mixBassSwap,
+  } = usePlaybackSettings(
+    useShallow((s) => ({
+      crossfadeSec: s.crossfadeSec,
+      mixBassSwap: s.mixBassSwap,
+      eqEnabled: s.eqEnabled,
+      eqPreset: s.eqPreset,
+      eqCustomGains: s.eqCustomGains,
+      monoAudio: s.monoAudio,
+      normalizeVolume: s.normalizeVolume,
+    })),
+  );
   const outputDeviceId = usePlaybackSettings((s) => s.outputDeviceId);
   const wantsGraph =
-    eqEnabled || monoAudio || normalizeVolume || outputDeviceId !== "";
+    eqEnabled ||
+    monoAudio ||
+    normalizeVolume ||
+    outputDeviceId !== "" ||
+    (crossfadeSec > 0 && mixBassSwap);
   useEffect(() => {
     const g = wantsGraph ? ensureGraph() : graphRef.current;
     if (!g) return;
@@ -902,7 +1166,11 @@ export function useAudioEngine() {
     const seedKey = `${seedVideoId}#${radioEpoch}`;
     if (radioFetchedForRef.current === seedKey) return;
     radioFetchedForRef.current = seedKey;
-    fetchRadio(seedVideoId)
+    const queued = usePlaybackStore.getState().queue;
+    fetchVariedRadio(seedVideoId, {
+      exclude: queued.map((t) => t.videoId),
+      alternateSeeds: queued.slice(-5, -1).map((t) => t.videoId),
+    })
       .then((tracks) => {
         // Guard against a stale fetch: the user may have replaced the queue
         // (playNow/setQueue) while the radio request was in flight. Only

@@ -12,6 +12,8 @@ export type InterfaceFont = "system" | "gsans" | "inter" | "roboto" | "plex";
 export type RatingButtons = "heart" | "both";
 /** How the full-screen now-playing view fills the window
  *  (see `components/layout/fullscreen-player.tsx`). */
+export type VideoQuality = 720 | 1080 | 1440;
+
 export type FullscreenLayout = "cover" | "lyrics" | "immersive";
 
 type State = {
@@ -56,6 +58,11 @@ type State = {
   windowGlowCover: boolean;
   /** Glow thickness, 10-100 (50 = default). */
   windowGlowSize: number;
+  /** Immersive fullscreen shows the track's video instead of the cover;
+   *  sticks across tracks until switched back to Song. */
+  fullscreenVideo: boolean;
+  /** Picture height for the immersive Video mode. */
+  videoQuality: VideoQuality;
   setCloseAction: (v: CloseButtonAction) => void;
   setCacheAutoClean: (v: CacheAutoCleanPeriod) => void;
   markCacheCleaned: () => void;
@@ -69,6 +76,8 @@ type State = {
   setWindowGlow: (v: boolean) => void;
   setWindowGlowCover: (v: boolean) => void;
   setWindowGlowSize: (v: number) => void;
+  setFullscreenVideo: (v: boolean) => void;
+  setVideoQuality: (v: VideoQuality) => void;
 };
 
 /**
@@ -93,6 +102,8 @@ export const useSettingsStore = create<State>()(
       windowGlow: false,
       windowGlowCover: true,
       windowGlowSize: 50,
+      fullscreenVideo: false,
+      videoQuality: 720,
       setCloseAction: (closeAction) => set({ closeAction }),
       setCacheAutoClean: (cacheAutoClean) => set({ cacheAutoClean }),
       markCacheCleaned: () => set({ lastCacheCleanAt: Date.now() }),
@@ -106,6 +117,8 @@ export const useSettingsStore = create<State>()(
       setAutoUpdate: (autoUpdate) => set({ autoUpdate }),
       setWindowGlow: (windowGlow) => set({ windowGlow }),
       setWindowGlowCover: (windowGlowCover) => set({ windowGlowCover }),
+      setFullscreenVideo: (fullscreenVideo) => set({ fullscreenVideo }),
+      setVideoQuality: (videoQuality) => set({ videoQuality }),
       setWindowGlowSize: (v) =>
         set({ windowGlowSize: Math.min(100, Math.max(10, Math.round(v))) }),
     }),
