@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from "motion/react";
+import { m, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useId, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -144,7 +144,7 @@ export function AnimatedTabs({
             type="button"
           >
             {isActive && (
-              <motion.span
+              <m.span
                 className={getIndicatorStyles()}
                 layout
                 layoutId={layoutId}

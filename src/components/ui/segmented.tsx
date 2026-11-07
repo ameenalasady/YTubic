@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from "motion/react";
+import { m, useReducedMotion } from "motion/react";
 import { useId } from "react";
 
 import { cn } from "@/lib/utils";
@@ -77,7 +77,7 @@ export function SegmentedControl<T extends string>({
             )}
           >
             {active && (
-              <motion.span
+              <m.span
                 layout
                 layoutId={layoutId}
                 className="absolute inset-0 rounded-md bg-w140 shadow-[0_1px_2px_var(--k350),inset_0_1px_0_var(--w080)]"

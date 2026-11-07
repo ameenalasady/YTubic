@@ -6,7 +6,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { m, useReducedMotion } from "motion/react";
 import { IconLoader2, IconVideoFilled } from "@tabler/icons-react";
 import { IconMusicFilled } from "@/components/shared/filled-icons";
 import type { SourceKind } from "@/lib/store/track-source";
@@ -111,7 +111,7 @@ function GlowPill<T extends string | number>({
         tapTimer.current = window.setTimeout(() => setNear(false), 3000);
       }}
     >
-      <motion.div
+      <m.div
         role="radiogroup"
         aria-label={label}
         initial={false}
@@ -130,7 +130,7 @@ function GlowPill<T extends string | number>({
         style={{ height: SIZE }}
         className="relative border border-w080 bg-w070 shadow-[0_10px_30px_-10px_var(--k900),0_0_0_1px_var(--w040)] backdrop-blur-xl"
       >
-        <motion.div
+        <m.div
           aria-hidden
           className="pointer-events-none absolute inset-0 grid place-items-center text-(--fs-title)"
           animate={{ opacity: open ? 0 : 1, scale: open ? 0.6 : 1 }}
@@ -141,9 +141,9 @@ function GlowPill<T extends string | number>({
           }
         >
           {collapsed}
-        </motion.div>
+        </m.div>
 
-        <motion.div
+        <m.div
           ref={contentRef}
           className="absolute inset-y-0 left-0 flex w-max items-center gap-0.5 p-[3px]"
           animate={{ opacity: open ? 1 : 0 }}
@@ -169,7 +169,7 @@ function GlowPill<T extends string | number>({
                 )}
               >
                 {on ? (
-                  <motion.span
+                  <m.span
                     layoutId={id}
                     aria-hidden
                     className="absolute inset-0 rounded-[7px]"
@@ -193,8 +193,8 @@ function GlowPill<T extends string | number>({
               </button>
             );
           })}
-        </motion.div>
-      </motion.div>
+        </m.div>
+      </m.div>
     </div>
   );
 }

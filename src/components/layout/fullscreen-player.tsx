@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import { toggleDisliked, toggleLiked } from "@/lib/like-actions";
 import { useDislikesStore } from "@/lib/store/dislikes";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m } from "motion/react";
 import { useTheme } from "next-themes";
 import {
   IconArrowsMinimize,
@@ -194,7 +194,7 @@ function FullscreenView({ track }: { track: QueueTrack }) {
 
   return (
     <TooltipProvider delayDuration={800} skipDelayDuration={0}>
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 10, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.985 }}
@@ -490,7 +490,7 @@ function FullscreenView({ track }: { track: QueueTrack }) {
             </div>
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </TooltipProvider>
   );
 }

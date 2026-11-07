@@ -27,7 +27,7 @@ import {
   useLyricsView,
 } from "@/components/layout/lyrics-view";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m } from "motion/react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import {
@@ -277,7 +277,7 @@ export function VolumeControl({
         className={cn(playerIconButton, className)}
       >
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.span
+          <m.span
             key={Icon.name}
             initial={{ opacity: 0, scale: 0.7 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -286,7 +286,7 @@ export function VolumeControl({
             className="flex items-center justify-center"
           >
             <Icon />
-          </motion.span>
+          </m.span>
         </AnimatePresence>
       </Button>
       {direction === "vertical" ? (
@@ -426,7 +426,7 @@ export function PlayerBar({
           in from blank. */}
       <AnimatePresence initial={false} mode="wait">
         {queueOpen ? (
-          <motion.div
+          <m.div
             key="queue"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -435,9 +435,9 @@ export function PlayerBar({
             className="flex min-h-0 flex-1 flex-col"
           >
             <QueueBody onClose={() => setQueueOpen(false)} />
-          </motion.div>
+          </m.div>
         ) : (
-          <motion.div
+          <m.div
             key="cover"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -483,7 +483,7 @@ export function PlayerBar({
               // `isolate` is load-bearing: the outline below blends, and a
               // blending element turns its nearest stacking-context ancestor
               // into an isolated group, which is also a backdrop root. Without
-              // it that group is the motion.div wrapping cover AND lyrics, so
+              // it that group is the m.div wrapping cover AND lyrics, so
               // the lyrics' backdrop-blur strip loses the card and the app
               // background from its backdrop and paints as a dark band.
               <div className="group/cover relative isolate aspect-square w-full rounded-md shadow-[0_1px_14px_rgb(0_0_0/0.12)]">
@@ -647,12 +647,12 @@ export function PlayerBar({
       </div>
 
             {/* Lyrics flow — fills the rest of the cover-branch flex
-                column. Lives inside the same motion.div as the cover
+                column. Lives inside the same m.div as the cover
                 so the whole non-queue body crossfades as one unit. */}
             <div className="flex min-h-0 flex-1 flex-col px-3">
               <LyricsBody state={lyricsState} />
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
