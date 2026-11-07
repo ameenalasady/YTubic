@@ -7195,6 +7195,7 @@ dependencies = [
  "base64 0.22.1",
  "cookie",
  "discord-rich-presence",
+ "futures-util",
  "keyring",
  "md5",
  "rand 0.8.6",

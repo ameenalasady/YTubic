@@ -29,6 +29,7 @@ mod discord;
 #[cfg(target_os = "linux")]
 mod linux_graphics;
 mod media;
+mod progressive;
 #[cfg(target_os = "linux")]
 mod mpris;
 // Taskbar thumbnail toolbar (prev / play-pause / next under the taskbar
@@ -2347,9 +2348,26 @@ fn resolve_stream_ytdlp(app: tauri::AppHandle, video_id: String) -> Result<Strin
 /// bytes into a `<videoId>.part` file which is renamed to
 /// `<videoId>.webm` on successful completion; stream handlers block on
 /// `notify` until `complete` flips.
-struct DownloadState {
-    complete: Arc<AtomicBool>,
-    notify: Arc<Notify>,
+pub(crate) struct DownloadState {
+    pub(crate) complete: Arc<AtomicBool>,
+    pub(crate) notify: Arc<Notify>,
+    /// Set once yt-dlp has resolved a direct URL with a known size. From
+    /// then on `/stream` can answer before the download finishes (see
+    /// progressive.rs). Stays empty on the full-download fallback path.
+    pub(crate) resolved: std::sync::OnceLock<progressive::ResolvedAudio>,
+    /// Bytes of the `.part` file written so far (progressive path only).
+    pub(crate) downloaded: AtomicU64,
+}
+
+impl DownloadState {
+    fn new() -> Self {
+        Self {
+            complete: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(Notify::new()),
+            resolved: std::sync::OnceLock::new(),
+            downloaded: AtomicU64::new(0),
+        }
+    }
 }
 
 type DownloadMap = Arc<Mutex<HashMap<String, Arc<DownloadState>>>>;
@@ -2360,7 +2378,9 @@ type DownloadMap = Arc<Mutex<HashMap<String, Arc<DownloadState>>>>;
 // and strips every real audio format, leaving only storyboard thumbnails.
 // Anonymous streaming avoids that entirely and is the primary path.
 //
-// Nor do we pin `--extractor-args youtube:player_client=...` any more.
+// Nor do we pin `--extractor-args youtube:player_client=...` any more
+// (the progressive path *tries* one ad-free client first but always falls
+// back to the defaults; see progressive::FAST_CLIENT).
 // YouTube keeps taking clients away (as of 2026-08 `tv` is SABR-only and
 // `android_vr`/`ios`/`mweb` need a GVS PO token, so the old
 // `tv,android_vr`/`tv,android` pins resolved to zero audio formats and
@@ -2400,7 +2420,15 @@ struct StreamServer {
     /// `StreamServerState` so the `set_cache_limit` command updates it
     /// live without restarting the server.
     cache_limit: Arc<AtomicU64>,
+    /// Client for ranged fetches from googlevideo (progressive path).
+    http: reqwest::Client,
+    /// Consecutive lookups where `progressive::FAST_CLIENT` failed. At
+    /// `FAST_CLIENT_MAX_FAILURES` it's skipped for the rest of the session
+    /// so a YouTube-side block doesn't add a wasted lookup to every track.
+    fast_client_failures: Arc<AtomicU64>,
 }
+
+const FAST_CLIENT_MAX_FAILURES: u64 = 3;
 
 /// Read the `ephemeral` query flag from a stream/prefetch request.
 /// True when `?ephemeral=1` (or `=true`) appears — used to route the
@@ -2932,48 +2960,109 @@ fn spawn_downloader(
 
         let program = ytdlp::program(&srv.ytdlp_bin);
 
-        // Primary attempt: anonymous with yt-dlp's default clients (see
-        // StreamServer note). Progressive http only — the bytes are
-        // handed to an <audio> element via the localhost proxy.
-        // Trailing /best keeps combined-mp4-only videos playable.
-        const AUDIO_FORMAT: &str =
-            "bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best";
-        let mut attempt =
-            download_attempt(&program, &url, &part_path, AUDIO_FORMAT, None, &state).await;
-
-        // Age-restricted videos can't be streamed anonymously. If the
-        // anonymous attempt failed specifically with the age-gate error and
-        // an account is signed in, retry once with that account's cookies.
-        // No client pin (same default list as the anonymous path) — the
-        // cookies supply the account's age confirmation. A trailing `/best`
-        // guards against a client that omits an audio-only format on the
-        // authenticated path.
-        if !attempt.ok && attempt.age_gated {
-            match write_temp_cookies(&srv.app).await {
-                Some(cookies) => {
-                    eprintln!(
-                        "[stream] {video_id} is age-restricted; retrying with account cookies"
-                    );
-                    attempt = download_attempt(
-                        &program,
-                        &url,
-                        &part_path,
-                        "bestaudio[ext=webm][protocol^=http]/bestaudio[protocol^=http]/bestaudio/best",
-                        Some(cookies.path()),
-                        &state,
-                    )
-                    .await;
-                    // `cookies` (temp jar) is removed here on drop.
+        // Progressive path: resolve the direct URL, publish it so /stream
+        // can start serving, then fill the cache file in ranged chunks.
+        // Order: the fast ad-free client (see progressive::FAST_CLIENT),
+        // then yt-dlp's default clients, then, for age-gated videos only,
+        // the account cookies (same policy as the download path below).
+        let mut resolved = None;
+        let mut age_gated = false;
+        if srv.fast_client_failures.load(Ordering::Relaxed) < FAST_CLIENT_MAX_FAILURES {
+            match progressive::resolve_audio(&program, &url, None, Some(progressive::FAST_CLIENT))
+                .await
+            {
+                Ok(r) => {
+                    srv.fast_client_failures.store(0, Ordering::Relaxed);
+                    resolved = Some(r);
                 }
-                None => {
+                Err(e) if e.age_gated => age_gated = true,
+                Err(_) => {
+                    let n = srv.fast_client_failures.fetch_add(1, Ordering::Relaxed) + 1;
                     eprintln!(
-                        "[stream] {video_id} is age-restricted but no account is signed in — cannot play"
+                        "[stream] {video_id}: {} client failed ({n} in a row); trying defaults",
+                        progressive::FAST_CLIENT
                     );
                 }
             }
         }
+        if resolved.is_none() && !age_gated {
+            match progressive::resolve_audio(&program, &url, None, None).await {
+                Ok(r) => resolved = Some(r),
+                Err(e) => age_gated = e.age_gated,
+            }
+        }
+        if resolved.is_none() && age_gated {
+            if let Some(cookies) = write_temp_cookies(&srv.app).await {
+                eprintln!("[stream] {video_id} is age-restricted; resolving with account cookies");
+                resolved = progressive::resolve_audio(&program, &url, Some(cookies.path()), None)
+                    .await
+                    .ok();
+            }
+        }
+        let part_file = match &resolved {
+            Some(_) => tokio::fs::File::create(&part_path).await.ok(),
+            None => None,
+        };
 
-        let success = attempt.ok;
+        let success = if let (Some(r), Some(file)) = (resolved, part_file) {
+            eprintln!(
+                "[stream] {video_id}: resolved {} bytes {} — streaming",
+                r.size, r.mime
+            );
+            // The .part file exists before `resolved` is visible, so a
+            // handler that sees it can always open the file.
+            let _ = state.resolved.set(r.clone());
+            state.notify.notify_waiters();
+            progressive::fill(&srv.http, &r, file, &state).await
+                && state.downloaded.load(Ordering::Acquire) == r.size
+        } else {
+            // Fallback when no direct URL with a known size came back:
+            // the old full download through yt-dlp, anonymous first (see
+            // the StreamServer note).
+            let mut attempt = download_attempt(
+                &program,
+                &url,
+                &part_path,
+                progressive::AUDIO_FORMAT,
+                None,
+                &state,
+            )
+            .await;
+
+            // Age-restricted videos can't be streamed anonymously. If the
+            // anonymous attempt failed specifically with the age-gate error and
+            // an account is signed in, retry once with that account's cookies.
+            // No client pin (same default list as the anonymous path) — the
+            // cookies supply the account's age confirmation. A trailing `/best`
+            // guards against a client that omits an audio-only format on the
+            // authenticated path.
+            if !attempt.ok && attempt.age_gated {
+                match write_temp_cookies(&srv.app).await {
+                    Some(cookies) => {
+                        eprintln!(
+                            "[stream] {video_id} is age-restricted; retrying with account cookies"
+                        );
+                        attempt = download_attempt(
+                            &program,
+                            &url,
+                            &part_path,
+                            progressive::AUDIO_FORMAT,
+                            Some(cookies.path()),
+                            &state,
+                        )
+                        .await;
+                        // `cookies` (temp jar) is removed here on drop.
+                    }
+                    None => {
+                        eprintln!(
+                            "[stream] {video_id} is age-restricted but no account is signed in — cannot play"
+                        );
+                    }
+                }
+            }
+
+            attempt.ok
+        };
 
         // Finish all file operations BEFORE signalling completion.
         // Otherwise handlers waiting on `state.complete` can race and
@@ -3080,25 +3169,16 @@ async fn stream_handler(
     };
     let final_path = target_dir.join(format!("{video_id}.webm"));
 
-    // If the full file isn't on disk yet, start (or attach to) the
-    // download and block until it completes. Attempting to progressively
-    // stream yt-dlp's stdout broke in two ways:
-    //   - m4a/mp4 audio tracks often have the `moov` atom at the end of
-    //     the file, so Chromium can't decode them until every byte has
-    //     arrived. The first request then fails with
-    //     MEDIA_ERR_SRC_NOT_SUPPORTED.
-    //   - There's no valid HTTP response for a stream whose total length
-    //     is unknown AND whose Range subset has an unknown end
-    //     (`Content-Range: bytes 0-*/*` is grammatically invalid per
-    //     RFC 7233). Serving with `Accept-Ranges: none` works but then
-    //     Chromium disables seeking entirely.
+    // If the file isn't fully cached, start (or attach to) its download
+    // and wait only until yt-dlp has resolved the direct URL. From then on
+    // `progressive::respond` serves bytes as the download writes them, or
+    // straight from googlevideo for a seek past what's downloaded, with a
+    // correct length so seeking works (see progressive.rs).
     //
-    // Full download + `ServeFile` sidesteps both problems: Range
-    // requests, seeking, content-type detection, and large file support
-    // all become the crate's problem. The "first-play" latency is just
-    // the download time (~1-3 s on a healthy connection for a typical
-    // 3-minute track) and the existing next-track prefetcher hides it
-    // from the user on every track except the very first one.
+    // If resolving gives no direct URL with a known size, the downloader
+    // falls back to a full yt-dlp download and we wait for it as before:
+    // piping yt-dlp's stdout can't give the element a valid length
+    // (`Content-Range: bytes 0-*/*` is invalid), which broke seeking.
     let t0 = std::time::Instant::now();
 
     let range_hdr = req
@@ -3118,10 +3198,7 @@ async fn stream_handler(
             if let Some(s) = map.get(&map_key) {
                 s.clone()
             } else {
-                let s = Arc::new(DownloadState {
-                    complete: Arc::new(AtomicBool::new(false)),
-                    notify: Arc::new(Notify::new()),
-                });
+                let s = Arc::new(DownloadState::new());
                 map.insert(map_key.clone(), s.clone());
                 drop(map);
                 spawn_downloader(
@@ -3135,27 +3212,53 @@ async fn stream_handler(
             }
         };
 
-        // Bounded wait — 120 s is generous for any single track; if
-        // yt-dlp is wedged past that, we'd rather fail fast than hang
-        // the audio element forever.
+        // Bounded wait — 120 s is generous for resolving (or, on the
+        // fallback path, downloading) any single track; if yt-dlp is
+        // wedged past that, fail fast rather than hang the element.
         let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-        while !state.complete.load(Ordering::Acquire) {
+        loop {
+            let notified = state.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if state.resolved.get().is_some() || state.complete.load(Ordering::Acquire) {
+                break;
+            }
             if tokio::time::Instant::now() >= deadline {
                 eprintln!("[stream] {video_id}: TIMEOUT after 120s");
                 return (StatusCode::GATEWAY_TIMEOUT, "download timeout")
                     .into_response();
             }
-            let notified = state.notify.notified();
-            tokio::pin!(notified);
             let _ = tokio::time::timeout(Duration::from_secs(5), notified).await;
         }
 
         if !final_path.exists() {
-            eprintln!(
-                "[stream] {video_id}: BAD_GATEWAY — complete but no .webm (elapsed {:.2}s)",
-                t0.elapsed().as_secs_f32()
-            );
-            return (StatusCode::BAD_GATEWAY, "download failed").into_response();
+            let Some(resolved) = state.resolved.get() else {
+                eprintln!(
+                    "[stream] {video_id}: BAD_GATEWAY — complete but no .webm (elapsed {:.2}s)",
+                    t0.elapsed().as_secs_f32()
+                );
+                return (StatusCode::BAD_GATEWAY, "download failed").into_response();
+            };
+            let part_path = target_dir.join(format!("{video_id}.part"));
+            let part = tokio::fs::File::open(&part_path).await.ok();
+            // A failed open right as the download finishes means the file
+            // was just renamed: serve the cached copy below instead.
+            if part.is_some() || !final_path.exists() {
+                eprintln!(
+                    "[stream] {video_id}: streaming {range_hdr:?} after {:.2}s ({} of {} bytes on disk)",
+                    t0.elapsed().as_secs_f32(),
+                    state.downloaded.load(Ordering::Acquire),
+                    resolved.size,
+                );
+                let range = (!range_hdr.is_empty()).then_some(range_hdr.as_str());
+                return progressive::respond(
+                    range,
+                    resolved,
+                    state.clone(),
+                    part,
+                    srv.http.clone(),
+                );
+            }
         }
         eprintln!(
             "[stream] {video_id}: download finished in {:.2}s",
@@ -3381,10 +3484,7 @@ async fn video_handler(
             if let Some(s) = map.get(&map_key) {
                 s.clone()
             } else {
-                let s = Arc::new(DownloadState {
-                    complete: Arc::new(AtomicBool::new(false)),
-                    notify: Arc::new(Notify::new()),
-                });
+                let s = Arc::new(DownloadState::new());
                 map.insert(map_key.clone(), s.clone());
                 drop(map);
                 spawn_video_downloader(
@@ -3512,10 +3612,7 @@ async fn prefetch_handler(
         if map.contains_key(&map_key) {
             return StatusCode::ACCEPTED;
         }
-        let state = Arc::new(DownloadState {
-            complete: Arc::new(AtomicBool::new(false)),
-            notify: Arc::new(Notify::new()),
-        });
+        let state = Arc::new(DownloadState::new());
         map.insert(map_key.clone(), state.clone());
         state
     };
@@ -3606,6 +3703,12 @@ async fn start_stream_server(
         downloads: Arc::new(Mutex::new(HashMap::new())),
         ytdlp_bin,
         cache_limit,
+        http: reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(20))
+            .build()
+            .unwrap_or_default(),
+        fast_client_failures: Arc::new(AtomicU64::new(0)),
     };
 
     // Per-launch token as an unguessable path prefix. Baked into the base
