@@ -123,7 +123,7 @@ yt-dlp copy every ~3 days). Restarting the app forces the check.
 - **Routing:** TanStack Router (file-based, type-safe, prefetch on intent)
 - **Data:** TanStack Query
 - **Client state:** Zustand
-- **Icons:** lucide-react
+- **Icons:** @tabler/icons-react
 
 ## Dev
 
