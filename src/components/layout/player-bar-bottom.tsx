@@ -37,6 +37,7 @@ import {
   useLyricsView,
 } from "@/components/layout/lyrics-view";
 import {
+  PlaybackTime,
   ProgressSlider,
   VolumeControl,
   formatTime,
@@ -50,7 +51,6 @@ import { playerIconButton } from "@/components/layout/player-chrome";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
-import { useScrubStore } from "@/lib/store/scrub";
 
 /**
  * Compact horizontal player bar pinned to the bottom of the content
@@ -64,13 +64,12 @@ import { useScrubStore } from "@/lib/store/scrub";
  * both use `flex-1`.
  */
 export function PlayerBarBottom() {
-  const { playing, status, error, position, duration, shuffle, repeat } =
+  const { playing, status, error, duration, shuffle, repeat } =
     usePlaybackStore(
       useShallow((s) => ({
         playing: s.playing,
         status: s.status,
         error: s.error,
-        position: s.position,
         duration: s.duration,
         shuffle: s.shuffle,
         repeat: s.repeat,
@@ -84,10 +83,6 @@ export function PlayerBarBottom() {
   const setShuffle = usePlaybackStore((s) => s.setShuffle);
   const cycleRepeat = usePlaybackStore((s) => s.cycleRepeat);
 
-  // Shared rather than local: the lyrics panel reads the live drag
-  // target so its text follows the thumb instead of waiting for release.
-  const scrub = useScrubStore((s) => s.scrub);
-  const setScrub = useScrubStore((s) => s.setScrub);
   const iTunesCover = useITunesCover(track);
   const lyricsState = useLyricsView(track);
   const coverRef = useRef<HTMLDivElement>(null);
@@ -276,14 +271,11 @@ export function PlayerBarBottom() {
           between them. */}
       <div className="flex items-center gap-2">
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {formatTime(scrub ?? position)}
+          <PlaybackTime />
         </span>
         <div className="min-w-0 flex-1">
           <ProgressSlider
-            position={position}
             duration={duration}
-            scrub={scrub}
-            setScrub={setScrub}
             seek={seek}
             disabled={!hasTrack || duration <= 0}
           />

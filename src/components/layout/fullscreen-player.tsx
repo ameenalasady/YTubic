@@ -43,6 +43,7 @@ import { QualitySwitch, SourceSwitch } from "@/components/layout/source-switch";
 import { useSourceSwitch } from "@/lib/use-source-switch";
 import { resolveStreamId, useTrackSourceStore } from "@/lib/store/track-source";
 import {
+  PlaybackTime,
   ProgressSlider,
   VolumeControl,
   formatTime,
@@ -55,7 +56,6 @@ import { LyricsSourceButton } from "@/components/layout/lyrics-view";
 import { cn } from "@/lib/utils";
 import { useFullscreenStore } from "@/lib/store/fullscreen";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
-import { useScrubStore } from "@/lib/store/scrub";
 import { useSettingsStore, type FullscreenLayout } from "@/lib/store/settings";
 import type { QueueTrack } from "@/lib/store/playback";
 
@@ -118,25 +118,21 @@ function FullscreenView({ track }: { track: QueueTrack }) {
   const { resolvedTheme } = useTheme();
   const light = resolvedTheme === "light";
 
-  const { playing, status, position, duration, shuffle, repeat } =
-    usePlaybackStore(
-      useShallow((s) => ({
-        playing: s.playing,
-        status: s.status,
-        position: s.position,
-        duration: s.duration,
-        shuffle: s.shuffle,
-        repeat: s.repeat,
-      })),
-    );
+  const { playing, status, duration, shuffle, repeat } = usePlaybackStore(
+    useShallow((s) => ({
+      playing: s.playing,
+      status: s.status,
+      duration: s.duration,
+      shuffle: s.shuffle,
+      repeat: s.repeat,
+    })),
+  );
   const toggle = usePlaybackStore((s) => s.toggle);
   const next = usePlaybackStore((s) => s.next);
   const prev = usePlaybackStore((s) => s.prev);
   const seek = usePlaybackStore((s) => s.seek);
   const setShuffle = usePlaybackStore((s) => s.setShuffle);
   const cycleRepeat = usePlaybackStore((s) => s.cycleRepeat);
-  const scrub = useScrubStore((s) => s.scrub);
-  const setScrub = useScrubStore((s) => s.setScrub);
   const loading = status === "loading" && playing;
 
   const iTunesCover = useITunesCover(track);
@@ -395,14 +391,11 @@ function FullscreenView({ track }: { track: QueueTrack }) {
           <div className="flex shrink-0 flex-col gap-2.5">
             <div className="flex items-center gap-3">
               <span className="w-[38px] shrink-0 font-mono text-xs text-(--fs-time)">
-                {formatTime(scrub ?? position)}
+                <PlaybackTime />
               </span>
               <div className="min-w-0 flex-1">
                 <ProgressSlider
-                  position={position}
                   duration={duration}
-                  scrub={scrub}
-                  setScrub={setScrub}
                   seek={seek}
                   disabled={duration <= 0}
                 />

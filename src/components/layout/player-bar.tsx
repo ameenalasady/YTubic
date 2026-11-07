@@ -116,21 +116,30 @@ export function repeatLabel(repeat: RepeatMode): string {
 /* Fork note: SourceToggle intentionally omitted — fork moved the
    song/video picker into the player menu (0209432). Upstream's
    restyled toggle from 77b2c44 is skipped to preserve that decision. */
+/** Elapsed-time label. Subscribes to the playhead itself so the 4×/s
+ *  position ticks re-render this span, not the whole player. */
+export function PlaybackTime() {
+  const position = usePlaybackStore((s) => s.position);
+  const scrub = useScrubStore((s) => s.scrub);
+  return <>{formatTime(scrub ?? position)}</>;
+}
+
+/** Reads `position` and `scrub` from their stores (not props) so the
+ *  playhead ticks re-render only the slider. */
 export function ProgressSlider({
-  position,
   duration,
-  scrub,
-  setScrub,
   seek,
   disabled,
 }: {
-  position: number;
   duration: number;
-  scrub: number | null;
-  setScrub: (v: number | null) => void;
   seek: (v: number) => void;
   disabled: boolean;
 }) {
+  const position = usePlaybackStore((s) => s.position);
+  // Shared rather than local: the lyrics panel reads the live drag
+  // target so its text follows the thumb instead of waiting for release.
+  const scrub = useScrubStore((s) => s.scrub);
+  const setScrub = useScrubStore((s) => s.setScrub);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
@@ -337,7 +346,6 @@ export function PlayerBar({
     playing,
     status,
     error,
-    position,
     duration,
     shuffle,
     repeat,
@@ -346,7 +354,6 @@ export function PlayerBar({
       playing: s.playing,
       status: s.status,
       error: s.error,
-      position: s.position,
       duration: s.duration,
       shuffle: s.shuffle,
       repeat: s.repeat,
@@ -360,10 +367,6 @@ export function PlayerBar({
   const setShuffle = usePlaybackStore((s) => s.setShuffle);
   const cycleRepeat = usePlaybackStore((s) => s.cycleRepeat);
 
-  // Shared rather than local: the lyrics panel reads the live drag
-  // target so its text follows the thumb instead of waiting for release.
-  const scrub = useScrubStore((s) => s.scrub);
-  const setScrub = useScrubStore((s) => s.setScrub);
   const [queueOpen, setQueueOpen] = useState(false);
   const iTunesCover = useITunesCover(track);
   const lyricsState = useLyricsView(track);
@@ -570,15 +573,12 @@ export function PlayerBar({
         {/* Progress */}
         <div className="mt-2 flex flex-col gap-2.5">
           <ProgressSlider
-            position={position}
             duration={duration}
-            scrub={scrub}
-            setScrub={setScrub}
             seek={seek}
             disabled={!hasTrack || duration <= 0}
           />
           <div className="flex justify-between text-xs tabular-nums text-muted-foreground">
-            <span>{formatTime(scrub ?? position)}</span>
+            <span><PlaybackTime /></span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>
