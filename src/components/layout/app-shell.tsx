@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -15,13 +22,11 @@ import { WindowGlow } from "@/components/layout/window-glow";
 import { IS_MAC } from "@/lib/platform";
 import { EntityPageHeader } from "@/components/layout/entity-page-header";
 import { useEntityHeaderStore } from "@/lib/store/entity-header";
-import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { ChannelPickerDialog } from "@/components/layout/channel-picker-dialog";
 import { CoverLightboxDialog } from "@/components/layout/cover-lightbox-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAudioEngine } from "@/lib/audio-engine";
-import { FullscreenPlayer } from "@/components/layout/fullscreen-player";
 import { useCacheAutoClean } from "@/lib/cache-cleanup";
 import { usePlaybackNotifications } from "@/lib/playback-notifications";
 import { useLastfmScrobbler } from "@/lib/lastfm/scrobbler";
@@ -31,6 +36,8 @@ import { useDeepLinks } from "@/lib/use-deep-links";
 import { pickHighResThumbnail } from "@/components/shared/thumbnail";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
+import { useSettingsDialog } from "@/lib/store/settings-dialog";
+import { useFullscreenStore } from "@/lib/store/fullscreen";
 import { usePremiumStatusSync } from "@/lib/store/premium";
 import { usePanelResize } from "@/lib/panel-resize";
 import {
@@ -89,6 +96,32 @@ function useGlobalShortcuts() {
   }, []);
 }
 
+// Settings (every tab) and the fullscreen player are big and only matter
+// once opened, so they load as their own chunks on first open. After that
+// they stay mounted, so their close animations still run.
+const SettingsDialog = lazy(() =>
+  import("@/components/settings/settings-dialog").then((mod) => ({
+    default: mod.SettingsDialog,
+  })),
+);
+const FullscreenPlayer = lazy(() =>
+  import("@/components/layout/fullscreen-player").then((mod) => ({
+    default: mod.FullscreenPlayer,
+  })),
+);
+
+function MountOnceOpened({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: ReactNode;
+}) {
+  const [opened, setOpened] = useState(open);
+  if (open && !opened) setOpened(true);
+  return opened ? <Suspense fallback={null}>{children}</Suspense> : null;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   useAudioEngine();
   useYtdlpSetup();
@@ -107,6 +140,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   usePlaybackNotifications();
   useLastfmScrobbler();
   const mode = useLayoutStore((s) => s.mode);
+  const settingsOpen = useSettingsDialog((s) => s.open);
+  const fullscreenOpen = useFullscreenStore((s) => s.open);
   const setMode = useLayoutStore((s) => s.setMode);
   const background = useSettingsStore((s) => s.background);
   const cardWidth = usePanelsStore((s) => s.cardWidth);
@@ -284,10 +319,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             {mode === "floating" && hasTrack && <FloatingPlayerSync />}
           </div>
           <DragSnapOverlay />
-          <FullscreenPlayer />
+          <MountOnceOpened open={fullscreenOpen}>
+            <FullscreenPlayer />
+          </MountOnceOpened>
           <WindowResizeHandles disabled={IS_MAC} />
           <WindowGlow />
-          <SettingsDialog />
+          <MountOnceOpened open={settingsOpen}>
+            <SettingsDialog />
+          </MountOnceOpened>
           <ChannelPickerDialog />
           <CoverLightboxDialog />
         </div>
