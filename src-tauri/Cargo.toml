@@ -43,7 +43,10 @@ tauri-plugin-http = { version = "2", default-features = false, features = [
 ] }
 tauri-plugin-store = "2"
 tauri-plugin-shell = "2"
-reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+# rustls rather than native-tls: tauri-plugin-http already compiles reqwest
+# 0.12 with rustls, so native-tls only added a second TLS stack (OpenSSL on
+# Linux, plus hyper-tls/tokio-native-tls everywhere).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 urlencoding = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "io-util", "process", "sync", "net"] }
 axum = "0.7"
@@ -130,6 +133,15 @@ webkit2gtk = "=2.0.2"
 # Our own MPRIS player for KDE Plasma's taskbar tooltip (blocking API; the
 # version tauri's notification/keyring stack already compiles). See src/mpris.rs.
 zbus = "5"
+
+[profile.release]
+# Smaller, faster release binary: whole-program LTO with a single codegen
+# unit, symbols stripped. panic stays "unwind" on purpose: tokio contains a
+# panic to the task that raised it, and "abort" would turn one bad stream
+# request into a whole-app crash.
+lto = true
+codegen-units = 1
+strip = true
 
 [dev-dependencies]
 # ServiceExt::oneshot for the stream-server routing test.
