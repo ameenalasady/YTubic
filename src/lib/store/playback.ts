@@ -1,9 +1,5 @@
 import { create, type StateCreator } from "zustand";
-import {
-  createJSONStorage,
-  persist,
-  type StateStorage,
-} from "zustand/middleware";
+import { persist, type PersistStorage } from "zustand/middleware";
 import { emit } from "@tauri-apps/api/event";
 import type { ShelfItem, Thumbnail } from "@/lib/innertube/types";
 import { isFloatingPlayerWindow } from "@/lib/floating-player";
@@ -153,20 +149,39 @@ function persistedQueueIndex(queue: QueueTrack[], index: number): number {
   return safeIndex - Math.max(0, safeIndex - before);
 }
 
-/** Avoid serializing and writing the full queue on every position tick. */
-function createDebouncedStorage(delay = 1000): StateStorage {
-  if (typeof window === "undefined") return safeLocalStorage;
-  const pending = new Map<string, { value: string; timer: number }>();
+/**
+ * Debounced JSON storage for the persisted playback blob.
+ *
+ * `position` is part of that blob, so persist fires on every `timeupdate`
+ * (~4×/s). `createJSONStorage` would `JSON.stringify` the whole queue (up to
+ * 300 tracks) on each of those calls and only debounce the write. Holding the
+ * object and stringifying inside the timer means one serialize per second at
+ * most, however often the state changes.
+ */
+function createDebouncedJSONStorage<S>(delay = 1000): PersistStorage<S> {
+  const pending = new Map<string, { value: unknown; timer: number }>();
   return {
-    getItem: (name) => safeLocalStorage.getItem(name),
+    getItem: (name) => {
+      const raw = safeLocalStorage.getItem(name) as string | null;
+      if (raw == null) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    },
     setItem: (name, value) => {
+      if (typeof window === "undefined") {
+        safeLocalStorage.setItem(name, JSON.stringify(value));
+        return;
+      }
       const existing = pending.get(name);
       if (existing) window.clearTimeout(existing.timer);
       const timer = window.setTimeout(() => {
         const item = pending.get(name);
         if (!item) return;
-        safeLocalStorage.setItem(name, item.value);
         pending.delete(name);
+        safeLocalStorage.setItem(name, JSON.stringify(item.value));
       }, delay);
       pending.set(name, { value, timer });
     },
@@ -510,7 +525,7 @@ export const usePlaybackStore = isFloatingPlayerWindow()
         // auto-blasts audio at you. `position` is saved too, and kept on
         // rehydrate only when "Resume where you left off" is on; the audio
         // engine seeks there once the track's metadata has loaded.
-        storage: createJSONStorage(() => createDebouncedStorage()),
+        storage: createDebouncedJSONStorage(),
         partialize: (s) => ({
           queue: compactPersistedQueue(s.queue, s.index),
           index: persistedQueueIndex(s.queue, s.index),
