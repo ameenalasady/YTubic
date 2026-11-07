@@ -496,7 +496,14 @@ function SidebarSignInButton({ relinkId }: { relinkId: string | null }) {
               : invoke("start_login");
             call.catch((e) => toast.error(`Sign-in failed: ${String(e)}`));
           }}
-          className="grid h-9 w-full grid-cols-[32px_minmax(0,1fr)] items-center gap-0.5 overflow-hidden py-0 ps-0.5 pe-2.5 [&>svg]:justify-self-center"
+          // Same 32px icon column as the Settings row above, and the same
+          // 2px before it: 1px of padding plus the primary variant's 1px
+          // border. `!` because the Button's own `has-[>svg]:px-3` is more
+          // specific and would win. `justify-start` keeps that column pinned
+          // when the collapsed rail makes the button narrower than it;
+          // Button's `justify-center` would centre the overflow and pull
+          // the icon off the rail's axis.
+          className="grid h-9 w-full grid-cols-[32px_minmax(0,1fr)] items-center justify-start gap-0.5 overflow-hidden py-0 ps-px! pe-2.5! [&>svg]:justify-self-center"
         >
           <IconLogin stroke={2.3} />
           <span data-sidebar-label className="truncate text-start">
