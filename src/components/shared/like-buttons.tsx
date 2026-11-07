@@ -1,6 +1,13 @@
 import { useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HeartIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
+import {
+  IconHeart,
+  IconHeartFilled,
+  IconThumbDown,
+  IconThumbDownFilled,
+  IconThumbUp,
+  IconThumbUpFilled,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { fetchLikedSongs } from "@/lib/innertube/library";
@@ -31,7 +38,10 @@ export function getLikedIdsSet(data: ShelfItem[] | undefined): Set<string> {
 type Props = {
   videoId: string;
   className?: string;
-  /** Compact mode uses size-8 ghost buttons (for track rows). Default
+  /** Extra classes for each button, e.g. the player footer's shared
+   *  `playerIconButton` chrome so the pair matches its neighbours. */
+  buttonClassName?: string;
+  /** Compact mode uses size-7 ghost buttons (for track rows). Default
    *  is size-9 (for the player bar). */
   compact?: boolean;
   /** When true, only shows if the track is liked OR on hover of the
@@ -46,6 +56,7 @@ type Props = {
 export function LikeDislikeButtons({
   videoId,
   className,
+  buttonClassName,
   compact,
   hideUnlessLiked,
   meta,
@@ -120,36 +131,39 @@ export function LikeDislikeButtons({
       ? "opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
       : "";
 
-  const LikeIcon = both ? ThumbsUpIcon : HeartIcon;
+  const LikeIcon = both
+    ? isLiked
+      ? IconThumbUpFilled
+      : IconThumbUp
+    : isLiked
+      ? IconHeartFilled
+      : IconHeart;
+  const DislikeIcon = isDisliked ? IconThumbDownFilled : IconThumbDown;
 
   return (
     <div className={cn("flex items-center", hoverVisibility, className)}>
       <Button
         variant="ghost"
         size="icon"
-        className={btnSize}
+        className={cn(btnSize, buttonClassName)}
         onClick={onLike}
         disabled={busy !== null}
         aria-label={isLiked ? "Remove from liked" : "Add to liked"}
         aria-pressed={isLiked}
       >
-        <LikeIcon
-          className={cn(iconSize, isLiked && "fill-current text-brand")}
-        />
+        <LikeIcon className={cn(iconSize, isLiked && "text-brand")} />
       </Button>
       {both ? (
         <Button
           variant="ghost"
           size="icon"
-          className={btnSize}
+          className={cn(btnSize, buttonClassName)}
           onClick={onDislike}
           disabled={busy !== null}
           aria-label={isDisliked ? "Remove dislike" : "Dislike"}
           aria-pressed={isDisliked}
         >
-          <ThumbsDownIcon
-            className={cn(iconSize, isDisliked && "fill-current text-t3")}
-          />
+          <DislikeIcon className={cn(iconSize, isDisliked && "text-t3")} />
         </Button>
       ) : null}
     </div>

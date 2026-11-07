@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { AlertCircleIcon, Loader2Icon } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { fetchBrowsePage } from "@/lib/innertube/browse";
 import { EntityHeader } from "@/components/shared/entity-header";
 import { ShelfCard } from "@/components/shared/shelf-card";
 import { TrackList } from "@/components/shared/track-list";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Shelf } from "@/lib/innertube/types";
+import { ErrorCard } from "@/components/shared/error-card";
 
 /**
  * Generic full-list browse page — the target of a shelf "More" link on
@@ -88,22 +89,11 @@ function BrowsePageView() {
       )}
 
       {error ? (
-        <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-          <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-          <div className="flex flex-col gap-1">
-            <span className="font-medium">Couldn't load this list</span>
-            <span className="text-muted-foreground">
-              {(error as Error).message}
-            </span>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="mt-1 w-fit text-brand hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
+        <ErrorCard
+          title="Couldn't load this list"
+          message={(error as Error).message}
+          onRetry={() => refetch()}
+        />
       ) : null}
 
       {isLoading ? <BrowseSkeleton /> : null}
@@ -123,7 +113,7 @@ function BrowsePageView() {
           className="flex h-16 items-center justify-center text-muted-foreground"
         >
           {isFetchingNextPage ? (
-            <Loader2Icon className="size-5 animate-spin" />
+            <IconLoader2 className="size-5 animate-spin" />
           ) : null}
         </div>
       ) : null}

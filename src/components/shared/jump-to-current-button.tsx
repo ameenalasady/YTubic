@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
+import { IconArrowDown, IconArrowUp } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { MENU_PANEL } from "@/components/ui/menu-chrome";
 import { cn } from "@/lib/utils";
@@ -108,7 +108,7 @@ export function JumpToCurrentButton({ tracks }: Props) {
   const right =
     mode === "right" ? `${cardWidth + CARD_CONTENT_GAP}px` : "1rem";
   const bottom = mode === "bottom" ? "6rem" : "1rem";
-  const Icon = activeAbove ? ArrowUpIcon : ArrowDownIcon;
+  const Icon = activeAbove ? IconArrowUp : IconArrowDown;
 
   return createPortal(
     <Button
@@ -144,7 +144,7 @@ export function JumpToCurrentButton({ tracks }: Props) {
         scroller.scrollTo({ top: target, behavior: "smooth" });
       }}
     >
-      Currently Playing
+      Currently playing
       <Icon />
     </Button>,
     document.body,

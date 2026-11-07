@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontalIcon } from "lucide-react";
 import {
-  IconArrowsShuffle2,
+  IconArrowsShuffle,
+  IconDots,
   IconPlayerPlayFilled,
   IconPlayerTrackNextFilled,
   IconTransitionRightFilled,
@@ -190,7 +190,7 @@ export function AlbumMenuItems({
         </Item>
       ) : null}
       <Item onSelect={() => void play(true)}>
-        <IconArrowsShuffle2 />
+        <IconArrowsShuffle />
         Shuffle play
       </Item>
       <Item onSelect={() => void playNext()}>
@@ -253,7 +253,7 @@ export function AlbumMoreMenu({ album }: { album: AlbumPage }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" aria-label="More actions">
-          <MoreHorizontalIcon />
+          <IconDots />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">

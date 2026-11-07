@@ -3,16 +3,15 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { authLoggedInQuery } from "@/lib/store/auth-queries";
 import {
-  AlertCircleIcon,
-  ChevronRightIcon,
-  HistoryIcon,
-  Loader2Icon,
-  LogInIcon,
-  PlayIcon,
-  SearchIcon,
-  ShuffleIcon,
-  XIcon,
-} from "lucide-react";
+  IconArrowsShuffle,
+  IconChevronRight,
+  IconHistory,
+  IconLoader2,
+  IconLogin,
+  IconPlayerPlayFilled,
+  IconSearch,
+  IconX,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   fetchSearch,
@@ -52,6 +51,7 @@ import type {
   ShelfItem,
   TopResultAction,
 } from "@/lib/innertube/types";
+import { ErrorCard } from "@/components/shared/error-card";
 
 type SearchParams = {
   q?: string;
@@ -99,7 +99,7 @@ function SearchPage() {
   const [scope, setScope] = useState<Scope>("catalog");
 
   const query = q.trim();
-  const { data, isLoading, isFetching, error } = useQuery({
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ["search", query, filter],
     queryFn: () => fetchSearch(query, filter),
     enabled: query.length > 0 && scope === "catalog",
@@ -152,7 +152,11 @@ function SearchPage() {
       {!query ? null : scope === "library" ? (
         <LibraryResults state={library} query={query} />
       ) : error ? (
-        <ErrorCard message={(error as Error).message} />
+        <ErrorCard
+          title="Search failed"
+          message={(error as Error).message}
+          onRetry={() => refetch()}
+        />
       ) : isLoading ? (
         <SearchSkeleton variant={filter === "songs" ? "list" : "shelves"} />
       ) : !data ? null : filter === "all" ? (
@@ -358,7 +362,7 @@ function AllResults({ data }: { data: SearchResults }) {
     const enrichError = enrich.find((e) => e.isError)?.error as
       Error | undefined;
     if (!topResult && enrichError && enrich.every((e) => e.isError)) {
-      return <ErrorCard message={enrichError.message} />;
+      return <ErrorCard title="Search failed" message={enrichError.message} />;
     }
     return <NoResults query={query} />;
   }
@@ -384,7 +388,7 @@ function AllResults({ data }: { data: SearchResults }) {
             className="inline-flex shrink-0 items-center gap-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             Show all
-            <ChevronRightIcon className="size-4" />
+            <IconChevronRight className="size-4" />
           </Link>
         );
 
@@ -529,18 +533,18 @@ function TopResultHero({
           className="pointer-events-auto relative z-10 shrink-0"
         >
           {pending ? (
-            <Loader2Icon className="size-4 animate-spin" />
+            <IconLoader2 className="size-4 animate-spin" />
           ) : action.kind === "shuffle" ? (
-            <ShuffleIcon className="size-4" />
+            <IconArrowsShuffle className="size-4" />
           ) : (
-            <PlayIcon className="size-4 fill-current" />
+            <IconPlayerPlayFilled className="size-4" />
           )}
           {action.label}
         </Button>
       ) : null}
 
       {isEntity ? (
-        <ChevronRightIcon className="pointer-events-none relative size-6 shrink-0 text-muted-foreground" />
+        <IconChevronRight className="pointer-events-none relative size-6 shrink-0 text-muted-foreground" />
       ) : null}
     </div>
   );
@@ -683,7 +687,8 @@ function LibraryResults({
 }) {
   if (state.loggedInKnown && !state.isLoggedIn) return <LibrarySignInHint />;
   if (state.isLoading) return <SearchSkeleton variant="list" />;
-  if (state.error) return <ErrorCard message={state.error.message} />;
+  if (state.error)
+    return <ErrorCard title="Search failed" message={state.error.message} />;
   if (state.matches.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -697,7 +702,7 @@ function LibraryResults({
 function LibrarySignInHint() {
   return (
     <div className="flex flex-col items-center gap-4 p-12 text-center">
-      <LogInIcon className="size-12 text-muted-foreground" />
+      <IconLogin className="size-12 text-muted-foreground" />
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold">
           Sign in to search your library
@@ -843,7 +848,7 @@ function SearchField({
           }
         }}
       >
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={inputRef}
           placeholder="Search songs, albums, artists…"
@@ -871,7 +876,7 @@ function SearchField({
             onClick={clear}
             className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-t5 transition-colors hover:bg-w070 hover:text-t1 focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <XIcon className="size-4" />
+            <IconX className="size-4" />
           </button>
         ) : null}
       </form>
@@ -898,7 +903,7 @@ function SearchField({
                   onClick={() => submitQuery(h)}
                   onMouseEnter={() => setActiveIdx(i)}
                 >
-                  <HistoryIcon className="size-4" />
+                  <IconHistory className="size-4" />
                   <span className="truncate">{h}</span>
                 </button>
               </li>
@@ -934,18 +939,6 @@ function SearchField({
 function NoResults({ query }: { query: string }) {
   return (
     <p className="text-sm text-muted-foreground">No results for "{query}".</p>
-  );
-}
-
-function ErrorCard({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-      <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-      <div className="flex flex-col gap-1">
-        <span className="font-medium">Search failed</span>
-        <span className="text-muted-foreground">{message}</span>
-      </div>
-    </div>
   );
 }
 

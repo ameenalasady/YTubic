@@ -3,39 +3,38 @@ import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Loader2Icon,
-  PlayIcon,
-  PinIcon,
-  PinOffIcon,
-  EyeIcon,
-  EyeOffIcon,
-  ChevronRightIcon,
-  ZapIcon,
-  DumbbellIcon,
-  CarIcon,
-  HeartIcon,
-  CloudRainIcon,
-  SmileIcon,
-  MoonIcon,
-  TargetIcon,
-  PartyPopperIcon,
-  CoffeeIcon,
-  UsersIcon,
-  MusicIcon,
-  Music2Icon,
-  Music3Icon,
-  Music4Icon,
-  MicIcon,
-  GuitarIcon,
-  PianoIcon,
-  SkullIcon,
-  FilmIcon,
-  BabyIcon,
-  ChurchIcon,
-  SnowflakeIcon,
-  GlobeIcon,
-  type LucideIcon,
-} from "lucide-react";
+  IconBabyCarriage,
+  IconBarbell,
+  IconBolt,
+  IconBuildingChurch,
+  IconCar,
+  IconChevronRight,
+  IconCloudRain,
+  IconCoffee,
+  IconConfetti,
+  IconEye,
+  IconEyeOff,
+  IconGuitarPick,
+  IconHeadphones,
+  IconHeart,
+  IconLoader2,
+  IconMicrophone,
+  IconMoodSmile,
+  IconMoon,
+  IconMovie,
+  IconMusic,
+  IconPiano,
+  IconPin,
+  IconPinnedOff,
+  IconPlayerPlayFilled,
+  IconSkull,
+  IconSnowflake,
+  IconTarget,
+  IconUsers,
+  IconVinyl,
+  IconWorld,
+  type TablerIcon,
+} from "@tabler/icons-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -71,37 +70,37 @@ type Props = {
 // gives us a title + tint color, so the icon is a heuristic by lowercase
 // title. Fallback `Music2` for unmatched titles, `Globe` when the title
 // looks like a region/language tag.
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  energize: ZapIcon,
-  workout: DumbbellIcon,
-  commute: CarIcon,
-  romance: HeartIcon,
-  sad: CloudRainIcon,
-  "feel good": SmileIcon,
-  sleep: MoonIcon,
-  focus: TargetIcon,
-  party: PartyPopperIcon,
-  chill: CoffeeIcon,
-  family: UsersIcon,
-  pop: MusicIcon,
-  "hip-hop": MicIcon,
-  country: GuitarIcon,
-  "r&b": MicIcon,
-  rock: GuitarIcon,
-  soul: Music3Icon,
-  latin: GuitarIcon,
-  "indie & alternative": Music3Icon,
-  classical: PianoIcon,
-  "dance & electronic": Music4Icon,
-  blues: Music3Icon,
-  jazz: Music3Icon,
-  metal: SkullIcon,
-  reggae: Music4Icon,
-  "folk & acoustic": GuitarIcon,
-  "soundtracks & musicals": FilmIcon,
-  "children's music": BabyIcon,
-  "christian & gospel": ChurchIcon,
-  holiday: SnowflakeIcon,
+const CATEGORY_ICONS: Record<string, TablerIcon> = {
+  energize: IconBolt,
+  workout: IconBarbell,
+  commute: IconCar,
+  romance: IconHeart,
+  sad: IconCloudRain,
+  "feel good": IconMoodSmile,
+  sleep: IconMoon,
+  focus: IconTarget,
+  party: IconConfetti,
+  chill: IconCoffee,
+  family: IconUsers,
+  pop: IconMusic,
+  "hip-hop": IconMicrophone,
+  country: IconGuitarPick,
+  "r&b": IconMicrophone,
+  rock: IconGuitarPick,
+  soul: IconVinyl,
+  latin: IconGuitarPick,
+  "indie & alternative": IconVinyl,
+  classical: IconPiano,
+  "dance & electronic": IconHeadphones,
+  blues: IconVinyl,
+  jazz: IconVinyl,
+  metal: IconSkull,
+  reggae: IconHeadphones,
+  "folk & acoustic": IconGuitarPick,
+  "soundtracks & musicals": IconMovie,
+  "children's music": IconBabyCarriage,
+  "christian & gospel": IconBuildingChurch,
+  holiday: IconSnowflake,
 };
 
 const GEO_KEYWORDS = [
@@ -129,11 +128,11 @@ const GEO_KEYWORDS = [
   "world",
 ];
 
-function pickCategoryIcon(title: string): LucideIcon {
+function pickCategoryIcon(title: string): TablerIcon {
   const key = title.toLowerCase();
   if (CATEGORY_ICONS[key]) return CATEGORY_ICONS[key];
-  if (GEO_KEYWORDS.some((g) => key.includes(g))) return GlobeIcon;
-  return Music2Icon;
+  if (GEO_KEYWORDS.some((g) => key.includes(g))) return IconWorld;
+  return IconMusic;
 }
 
 const CARD_CLASS =
@@ -235,7 +234,7 @@ export function ShelfCard({ item, className }: Props) {
               title="Hidden from sidebar"
               className="absolute right-1.5 top-1.5 flex items-center justify-center rounded-md bg-black/65 p-1 text-white shadow-sm"
             >
-              <EyeOffIcon className="size-4" />
+              <IconEyeOff className="size-4" />
             </div>
           </>
         ) : null}
@@ -292,7 +291,7 @@ export function ShelfCard({ item, className }: Props) {
         <span className="relative z-10 min-w-0 flex-1 truncate text-sm font-medium text-t1">
           {item.title}
         </span>
-        <ChevronRightIcon className="relative z-10 size-4 shrink-0 text-t7" />
+        <IconChevronRight className="relative z-10 size-4 shrink-0 text-t7" />
         <ArtworkOutline className="rounded-lg" />
       </Link>
     );
@@ -425,9 +424,9 @@ function HoverPlayButton({
       )}
     >
       {busy ? (
-        <Loader2Icon className="size-4 animate-spin" />
+        <IconLoader2 className="size-4 animate-spin" />
       ) : (
-        <PlayIcon className="ml-0.5 size-4 fill-current" />
+        <IconPlayerPlayFilled className="ml-0.5 size-4" />
       )}
     </button>
   );
@@ -475,7 +474,7 @@ function PlaylistPinContextMenu({
       <ContextMenuContent>
         {pinned ? (
           <ContextMenuItem onSelect={() => unpin(item.id)}>
-            <PinOffIcon />
+            <IconPinnedOff />
             Unpin from top
           </ContextMenuItem>
         ) : (
@@ -489,18 +488,18 @@ function PlaylistPinContextMenu({
               })
             }
           >
-            <PinIcon />
+            <IconPin />
             Pin to top
           </ContextMenuItem>
         )}
         {hidden ? (
           <ContextMenuItem onSelect={() => unhide(item.id)}>
-            <EyeIcon />
+            <IconEye />
             Show in sidebar
           </ContextMenuItem>
         ) : (
           <ContextMenuItem onSelect={() => hide(item.id)}>
-            <EyeOffIcon />
+            <IconEyeOff />
             Hide from sidebar
           </ContextMenuItem>
         )}

@@ -2,15 +2,14 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertCircleIcon,
-  CheckIcon,
-  ChevronRightIcon,
-  Loader2Icon,
-  RadioIcon,
-  Share2Icon,
-  ShuffleIcon,
-  UserPlusIcon,
-} from "lucide-react";
+  IconArrowsShuffle,
+  IconCheck,
+  IconChevronRight,
+  IconLoader2,
+  IconRadio,
+  IconShare3,
+  IconUserPlus,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { fetchArtist, setArtistSubscribed } from "@/lib/innertube/artist";
 import { fetchWatchQueue } from "@/lib/innertube/radio";
@@ -32,6 +31,8 @@ import type {
   ShelfMore,
   WatchTarget,
 } from "@/lib/innertube/types";
+import { ErrorCard } from "@/components/shared/error-card";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/artist/$id")({
   component: ArtistPageView,
@@ -44,22 +45,18 @@ export const Route = createFileRoute("/artist/$id")({
 
 function ArtistPageView() {
   const { id } = Route.useParams();
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["artist", id],
     queryFn: () => fetchArtist(id),
   });
 
   if (error) {
     return (
-      <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-        <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">Couldn't load artist</span>
-          <span className="text-muted-foreground">
-            {(error as Error).message}
-          </span>
-        </div>
-      </div>
+      <ErrorCard
+        title="Couldn't load artist"
+        message={(error as Error).message}
+        onRetry={() => refetch()}
+      />
     );
   }
 
@@ -172,6 +169,13 @@ function AboutSection({ artist }: { artist: ArtistPage }) {
  * Header action row: Shuffle (primary), Mix, Subscribe, Share — the same
  * four controls the official web header offers.
  */
+// The header's action row sits beside the cover at a fixed position and
+// can't wrap. Below the width the full row needs (cover column + Shuffle,
+// Mix, Subscribe with its count, Share), Mix and Subscribe drop their text
+// and become square icon buttons like Share.
+const NARROW_ICON_ONLY = "@max-[615px]/hdr:w-9 @max-[615px]/hdr:px-0!";
+const NARROW_HIDDEN = "@max-[615px]/hdr:hidden";
+
 function ArtistActions({ artist }: { artist: ArtistPage }) {
   const [pending, setPending] = useState<"shuffle" | "mix" | null>(null);
 
@@ -199,36 +203,35 @@ function ArtistActions({ artist }: { artist: ArtistPage }) {
     }
   };
 
-
   return (
     <>
       {artist.shuffle ? (
         <Button
           onClick={() => play("shuffle", artist.shuffle)}
           disabled={pending !== null}
-          className="bg-brand px-5 text-white hover:bg-brand/90"
         >
           {pending === "shuffle" ? (
-            <Loader2Icon className="animate-spin" />
+            <IconLoader2 className="animate-spin" />
           ) : (
-            <ShuffleIcon />
+            <IconArrowsShuffle />
           )}
           Shuffle
         </Button>
       ) : null}
       {artist.mix ? (
         <Button
-          variant="outline"
-          className="px-4"
+          variant="secondary"
           onClick={() => play("mix", artist.mix)}
           disabled={pending !== null}
+          aria-label="Mix"
+          className={NARROW_ICON_ONLY}
         >
           {pending === "mix" ? (
-            <Loader2Icon className="animate-spin" />
+            <IconLoader2 className="animate-spin" />
           ) : (
-            <RadioIcon />
+            <IconRadio />
           )}
-          Mix
+          <span className={NARROW_HIDDEN}>Mix</span>
         </Button>
       ) : null}
       {artist.channelId ? (
@@ -255,7 +258,7 @@ function ArtistActions({ artist }: { artist: ArtistPage }) {
           )
         }
       >
-        <Share2Icon />
+        <IconShare3 />
       </Button>
     </>
   );
@@ -301,23 +304,27 @@ function SubscribeButton({
   return (
     <Button
       variant={subscribed ? "ghost" : "outline"}
-      className={
-        subscribed
-          ? "bg-foreground/[0.12] px-4 text-foreground shadow-none hover:bg-foreground/[0.18]"
-          : "px-4"
-      }
+      className={cn(
+        NARROW_ICON_ONLY,
+        subscribed &&
+          "bg-foreground/[0.12] text-foreground shadow-none hover:bg-foreground/[0.18]",
+      )}
       onClick={toggle}
       disabled={pending}
+      aria-label={subscribed ? "Subscribed" : "Subscribe"}
     >
-      {subscribed ? <CheckIcon /> : <UserPlusIcon />}
-      {subscribed ? "Subscribed" : "Subscribe"}
+      {subscribed ? <IconCheck /> : <IconUserPlus />}
+      <span className={NARROW_HIDDEN}>
+        {subscribed ? "Subscribed" : "Subscribe"}
+      </span>
       {count ? (
         <span
-          className={
+          className={cn(
+            NARROW_HIDDEN,
             subscribed
               ? "font-normal text-foreground/60"
-              : "font-normal text-muted-foreground"
-          }
+              : "font-normal text-muted-foreground",
+          )}
         >
           {count}
         </span>
@@ -347,7 +354,7 @@ function ShelfMoreLink({
   const label = (
     <>
       More
-      <ChevronRightIcon className="size-4" />
+      <IconChevronRight className="size-4" />
     </>
   );
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { AlertCircleIcon, Loader2Icon, LogInIcon } from "lucide-react";
+import { IconLoader2, IconLogin } from "@tabler/icons-react";
 import { authLoggedInQuery } from "@/lib/store/auth-queries";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
   type PlaylistNextPage,
 } from "@/lib/innertube/playlist";
 import { openSettings } from "@/lib/store/settings-dialog";
+import { ErrorCard } from "@/components/shared/error-card";
 
 export const Route = createFileRoute("/library")({
   component: LibraryPage,
@@ -79,7 +80,7 @@ function LibraryPage() {
 function LoggedOutState() {
   return (
     <div className="flex flex-col items-center gap-4 p-12 text-center">
-      <LogInIcon className="size-12 text-muted-foreground" />
+      <IconLogin className="size-12 text-muted-foreground" />
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold">Sign in to see your library</h2>
         <p className="text-sm text-muted-foreground">
@@ -99,12 +100,19 @@ function SectionsView({
   queryKey: readonly string[];
   fetcher: () => Promise<LibrarySection[]>;
 }) {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey,
     queryFn: fetcher,
   });
 
-  if (error) return <ErrorCard message={(error as Error).message} />;
+  if (error)
+    return (
+      <ErrorCard
+        title="Couldn't load library"
+        message={(error as Error).message}
+        onRetry={() => refetch()}
+      />
+    );
   if (isLoading) return <SectionsSkeleton />;
   if (!data || data.length === 0) {
     return <p className="text-sm text-muted-foreground">Nothing here yet.</p>;
@@ -165,7 +173,13 @@ function LikedSongsView() {
   // Only show the full error card before any tracks load; a failed
   // continuation must not wipe the already-loaded liked-songs list.
   if (query.error && tracks.length === 0)
-    return <ErrorCard message={query.error.message} />;
+    return (
+      <ErrorCard
+        title="Couldn't load library"
+        message={query.error.message}
+        onRetry={() => query.refetch()}
+      />
+    );
   if (query.isLoading) {
     return <TrackRowSkeletonList count={10} />;
   }
@@ -185,7 +199,7 @@ function LikedSongsView() {
         >
           {query.isFetchingNextPage ? (
             <>
-              <Loader2Icon className="mr-2 size-4 animate-spin" />
+              <IconLoader2 className="mr-2 size-4 animate-spin" />
               Loading more…
             </>
           ) : (
@@ -207,14 +221,3 @@ function SectionsSkeleton() {
   );
 }
 
-function ErrorCard({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-      <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-      <div className="flex flex-col gap-1">
-        <span className="font-medium">Couldn't load library</span>
-        <span className="text-muted-foreground">{message}</span>
-      </div>
-    </div>
-  );
-}

@@ -4,10 +4,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeftIcon, ArrowRightIcon, MoreHorizontalIcon } from "lucide-react";
 import {
+  IconArrowLeft,
+  IconArrowRight,
   IconBugFilled,
   IconDeviceDesktopFilled,
+  IconDots,
   IconExternalLink,
   IconInfoCircleFilled,
   IconLayoutBottombarFilled,
@@ -143,7 +145,7 @@ export function TopBar() {
                 className={NAV_BTN_CLS}
                 aria-label="More"
               >
-                <MoreHorizontalIcon />
+                <IconDots />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
@@ -158,7 +160,7 @@ export function TopBar() {
 
               <DropdownMenuItem onSelect={() => setReportOpen(true)}>
                 <IconBugFilled />
-                Report Issue
+                Report an issue
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setAboutOpen(true)}>
                 <IconInfoCircleFilled />
@@ -191,7 +193,7 @@ export function TopBar() {
                 onClick={() => router.history.back()}
                 aria-label="Back"
               >
-                <ArrowLeftIcon />
+                <IconArrowLeft />
               </Button>
               <Button
                 variant="ghost"
@@ -200,7 +202,7 @@ export function TopBar() {
                 onClick={() => router.history.forward()}
                 aria-label="Forward"
               >
-                <ArrowRightIcon />
+                <IconArrowRight />
               </Button>
             </>
           )}

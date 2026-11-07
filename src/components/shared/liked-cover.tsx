@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { HeartIcon, ThumbsUpIcon } from "lucide-react";
+import { IconHeart, IconThumbUp } from "@tabler/icons-react";
 import {
   DEFAULT_LIKED_COVER_PRESET,
   useLikedCoverStore,
@@ -74,7 +74,7 @@ const HEART =
   "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z";
 
 // Material's thumb_up (the YouTube-style glyph), for when the rating
-// buttons are thumbs. The rows keep lucide's outline; this filled shape
+// buttons are thumbs. The rows keep Tabler's outline; this filled shape
 // reads better at cover size.
 const THUMB =
   "M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.58 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z";
@@ -106,7 +106,7 @@ export function LikedCoverArt({
   blur?: boolean;
 } & ComponentProps<"span">) {
   const thumb = useSettingsStore((s) => s.ratingButtons === "both");
-  const OutlineIcon = thumb ? ThumbsUpIcon : HeartIcon;
+  const OutlineIcon = thumb ? IconThumbUp : IconHeart;
   return (
     <span
       aria-hidden
@@ -122,7 +122,7 @@ export function LikedCoverArt({
       {art.outline ? (
         <OutlineIcon
           style={{ width: `${heart}%`, height: "auto", color: art.fill }}
-          strokeWidth={1.5}
+          stroke={1.5}
           aria-hidden
         />
       ) : (

@@ -32,19 +32,19 @@ describe("searchSettings", () => {
   });
 
   it("ranks a title hit above a description-only hit", () => {
-    // "mix" is in Smart Mix Timing's title and in other rows' descriptions.
+    // "mix" is in Smart mix timing's title and in other rows' descriptions.
     const out = titles("mix");
-    expect(out[0]).toBe("Smart Mix Timing");
+    expect(out[0]).toBe("Smart mix timing");
   });
 
   it("requires every word of the query", () => {
-    expect(titles("bass swap")).toEqual(["DJ Bass Swap"]);
+    expect(titles("bass swap")).toEqual(["DJ bass swap"]);
     expect(titles("bass zzzzz")).toEqual([]);
   });
 
   it("finds rows by their extra keywords and by tab name", () => {
     expect(titles("scrobble")).toContain("Last.fm");
-    expect(titles("1440p")).toContain("Video Quality");
+    expect(titles("1440p")).toContain("Video quality");
     expect(titles("integrations")).toEqual(
       expect.arrayContaining(["Last.fm", "Discord Rich Presence"]),
     );
@@ -90,7 +90,7 @@ describe("settings index", () => {
   });
 
   it("slugs titles predictably", () => {
-    expect(settingSlug("Glow Matches Cover")).toBe("glow-matches-cover");
+    expect(settingSlug("Glow matches cover")).toBe("glow-matches-cover");
     expect(settingSlug("Last.fm")).toBe("last-fm");
   });
 });

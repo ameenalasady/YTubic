@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 // Transport glyphs stay Lucide, as everywhere else in the player; the
 // chrome around them is Tabler.
-import { PlayIcon, PauseIcon } from "lucide-react";
 import {
   IconBroadcast,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
   IconPlaylist,
   IconTrashFilled,
   IconX,
@@ -462,12 +463,12 @@ function QueueRow({
   // matching the row-wide click → toggle behavior.
   const overlayIcon = active ? (
     playing ? (
-      <PauseIcon className="size-4 fill-current" />
+      <IconPlayerPauseFilled className="size-4" />
     ) : (
-      <PlayIcon className="size-4 fill-current" />
+      <IconPlayerPlayFilled className="size-4" />
     )
   ) : (
-    <PlayIcon className="size-4 fill-current" />
+    <IconPlayerPlayFilled className="size-4" />
   );
 
   return (
@@ -539,7 +540,7 @@ function QueueRow({
           {active && playing ? (
             <>
               <IconVolumeFilled className="size-4 group-hover:hidden" />
-              <PauseIcon className="hidden size-4 fill-current group-hover:block" />
+              <IconPlayerPauseFilled className="hidden size-4 group-hover:block" />
             </>
           ) : (
             overlayIcon

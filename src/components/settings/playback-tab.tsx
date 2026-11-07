@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconAdjustmentsFilled,
+  IconArrowsShuffle,
   IconCheck,
   IconChevronDown,
   IconCircleFilled,
   IconDeviceSpeakerFilled,
   IconHeadphonesFilled,
   IconPlayerPlayFilled,
+  IconPlayerSkipBackFilled,
   IconTransitionRightFilled,
-  IconArrowsShuffle2,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -93,27 +94,27 @@ function CrossfadeRow() {
       />
       <SettingRow
         icon={IconTransitionRightFilled}
-        title="DJ Bass Swap"
+        title="DJ bass swap"
         description="Swap basslines during the crossfade so the two tracks don't clash."
         control={
           <Switch
             checked={bassSwap}
             onCheckedChange={setBassSwap}
             disabled={seconds === 0}
-            aria-label="DJ Bass Swap"
+            aria-label="DJ bass swap"
           />
         }
       />
       <SettingRow
         icon={IconTransitionRightFilled}
-        title="Smart Mix Timing"
+        title="Smart mix timing"
         description="Start the mix as the outro begins and skip silent intros and endings."
         control={
           <Switch
             checked={smartTiming}
             onCheckedChange={setSmartTiming}
             disabled={seconds === 0}
-            aria-label="Smart Mix Timing"
+            aria-label="Smart mix timing"
           />
         }
       />
@@ -195,7 +196,7 @@ function NormalizeRow() {
   return (
     <SettingRow
       icon={IconDeviceSpeakerFilled}
-      title="Volume Normalization"
+      title="Volume normalization"
       description="Keep every track at a similar loudness."
       control={<Switch checked={on} onCheckedChange={set} />}
     />
@@ -208,7 +209,7 @@ function MonoRow() {
   return (
     <SettingRow
       icon={IconCircleFilled}
-      title="Mono Audio"
+      title="Mono audio"
       description="Play the same audio in both channels."
       control={<Switch checked={on} onCheckedChange={set} />}
     />
@@ -220,14 +221,14 @@ function RadioVarietyRow() {
   const set = usePlaybackSettings((s) => s.setRadioVariety);
   return (
     <SettingRow
-      icon={IconArrowsShuffle2}
-      title="Varied Radio & Autoplay"
+      icon={IconArrowsShuffle}
+      title="Varied radio & autoplay"
       description="Mix more tracks into radio and autoplay and shuffle them a bit, so it isn't the same songs every time."
       control={
         <Switch
           checked={on}
           onCheckedChange={set}
-          aria-label="Varied Radio & Autoplay"
+          aria-label="Varied radio & autoplay"
         />
       }
     />
@@ -240,7 +241,7 @@ function ResumeRow() {
   return (
     <SettingRow
       icon={IconPlayerPlayFilled}
-      title="Resume Where You Left Off"
+      title="Resume where you left off"
       description="Remember the track and position after a restart."
       control={<Switch checked={on} onCheckedChange={set} />}
     />
@@ -253,10 +254,10 @@ function ResumeRow() {
 
 const PRESET_LABELS: { value: EqPreset; label: string }[] = [
   { value: "flat", label: "Flat" },
-  { value: "bass", label: "Bass Boost" },
+  { value: "bass", label: "Bass boost" },
   { value: "vocal", label: "Vocal" },
   { value: "treble", label: "Treble" },
-  { value: "late", label: "Late Night" },
+  { value: "late", label: "Late night" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -491,7 +492,7 @@ function OutputDeviceRow() {
   return (
     <SettingRow
       icon={IconHeadphonesFilled}
-      title="Output Device"
+      title="Output device"
       description="Where audio is sent when YTubic starts playing."
       control={
         <DropdownMenu
@@ -539,8 +540,8 @@ function OutputDeviceRow() {
 /* ------------------------------------------------------------------ */
 
 const BACK_OPTIONS: { value: BackButtonMode; label: string }[] = [
-  { value: "previous", label: "Previous Track" },
-  { value: "restart", label: "Restart Track" },
+  { value: "previous", label: "Previous track" },
+  { value: "restart", label: "Restart track" },
   { value: "smart", label: "Smart" },
 ];
 
@@ -554,8 +555,8 @@ function BackButtonGroup() {
     <Group>
       <div className="flex flex-col">
         <SettingRow
-          icon={IconCircleFilled}
-          title="Back Button"
+          icon={IconPlayerSkipBackFilled}
+          title="Back button"
           description="What happens when you press previous mid-track."
           control={
             <SegmentedControl

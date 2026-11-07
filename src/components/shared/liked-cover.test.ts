@@ -49,15 +49,15 @@ describe("theme-aware Liked songs artwork", () => {
     expect(html).toContain("var(--acc1rgb)");
     expect(html).toContain("var(--t2)");
     expect(html).toContain('fill="none"');
-    expect(html).toContain("lucide-heart");
+    expect(html).toContain("tabler-icon-heart");
     expect(html).not.toContain("backdrop-filter");
   });
 
   it("follows the thumbs rating preference", () => {
     state.ratingButtons = "both";
     const html = renderToStaticMarkup(createElement(LikedCover));
-    expect(html).toContain("lucide-thumbs-up");
-    expect(html).not.toContain("lucide-heart");
+    expect(html).toContain("tabler-icon-thumb-up");
+    expect(html).not.toContain("tabler-icon-heart");
   });
 
   it("keeps the legacy filled presets intact", () => {
@@ -79,6 +79,6 @@ describe("theme-aware Liked songs artwork", () => {
     state.preset = "removed-preset";
     const html = renderToStaticMarkup(createElement(LikedCover));
     expect(html).toContain("var(--surface)");
-    expect(html).toContain("lucide-heart");
+    expect(html).toContain("tabler-icon-heart");
   });
 });

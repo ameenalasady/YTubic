@@ -1,27 +1,34 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type ComponentType,
+} from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  ActivityIcon,
-  ArrowLeftIcon,
-  ChevronRightIcon,
-  DiscAlbumIcon,
-  ExternalLinkIcon,
-  EyeOffIcon,
-  FilterIcon,
-  HeartIcon,
-  ImageIcon,
-  Loader2Icon,
-  LogInIcon,
-  LogOutIcon,
-  MessageCircleIcon,
-  Mic2Icon,
-  Music2Icon,
-  MousePointerClickIcon,
-  RadioIcon,
-  TimerIcon,
-  TypeIcon,
-  type LucideIcon,
-} from "lucide-react";
+  IconActivity,
+  IconArrowLeft,
+  IconChevronRight,
+  IconClickFilled,
+  IconClockFilled,
+  IconDiscFilled,
+  IconExternalLink,
+  IconFilterFilled,
+  IconHeartFilled,
+  IconLoader2,
+  IconLogin,
+  IconLogout,
+  IconMessageCircleFilled,
+  IconMicrophoneFilled,
+  IconPhotoFilled,
+  IconTypography,
+} from "@tabler/icons-react";
+import {
+  IconEyeOffFilled,
+  IconMusicFilled,
+  IconRadioFilled,
+} from "@/components/shared/filled-icons";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,13 +83,13 @@ export function IntegrationsTab() {
   return (
     <TabPane>
       <IntegrationListRow
-        icon={Music2Icon}
+        icon={IconMusicFilled}
         title="Last.fm"
         status={<LastfmStatusBadge />}
         onClick={() => setActive("lastfm")}
       />
       <IntegrationListRow
-        icon={MessageCircleIcon}
+        icon={IconMessageCircleFilled}
         title="Discord Rich Presence"
         status={<DiscordStatusBadge />}
         onClick={() => setActive("discord")}
@@ -101,7 +108,7 @@ function BackRow({ label, onBack }: { label: string; onBack: () => void }) {
       onClick={onBack}
       className="flex items-center gap-2 py-4 text-sm font-medium text-muted-foreground hover:text-foreground"
     >
-      <ArrowLeftIcon className="size-4" />
+      <IconArrowLeft className="size-4" />
       {label}
     </button>
   );
@@ -116,7 +123,7 @@ function IntegrationListRow({
   status,
   onClick,
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   title: string;
   status: ReactNode;
   onClick: () => void;
@@ -129,7 +136,7 @@ function IntegrationListRow({
         control={
           <div className="flex shrink-0 items-center gap-2">
             {status}
-            <ChevronRightIcon className="size-4 text-muted-foreground" />
+            <IconChevronRight className="size-4 text-muted-foreground" />
           </div>
         }
       />
@@ -277,7 +284,7 @@ function LastfmGroup() {
   return (
     <Group>
       <SettingRow
-        icon={Music2Icon}
+        icon={IconMusicFilled}
         title="Last.fm"
         description="Scrobble what you play and share your now-playing status. Uses your own Last.fm API account — nothing is sent anywhere until you connect."
         control={
@@ -298,7 +305,7 @@ function LastfmGroup() {
                 {username ? `@${username}` : "Connected"}
               </Badge>
               <Button variant="outline" size="sm" onClick={unlink}>
-                <LogOutIcon />
+                <IconLogout stroke={2.3} />
                 Disconnect
               </Button>
             </div>
@@ -310,7 +317,7 @@ function LastfmGroup() {
       {linked ? (
         <>
           <SettingRow
-            icon={RadioIcon}
+            icon={IconRadioFilled}
             title="Scrobble tracks"
             description="Send plays and now-playing updates to Last.fm."
             control={
@@ -322,7 +329,7 @@ function LastfmGroup() {
             }
           />
           <SettingRow
-            icon={HeartIcon}
+            icon={IconHeartFilled}
             title="Love liked tracks"
             description="When you like a song in YTubic, also love it on Last.fm."
             control={
@@ -371,14 +378,14 @@ function LastfmGroup() {
             className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
           >
             Create a Last.fm API account
-            <ExternalLinkIcon className="size-3" />
+            <IconExternalLink className="size-3" />
           </button>
           <div className="flex items-center gap-2">
             <Button onClick={connect} disabled={connecting}>
               {connecting ? (
-                <Loader2Icon className="animate-spin" />
+                <IconLoader2 className="animate-spin" />
               ) : (
-                <LogInIcon />
+                <IconLogin stroke={2.3} />
               )}
               {connecting ? "Waiting for authorization…" : "Connect"}
             </Button>
@@ -439,7 +446,7 @@ function DiscordGroup() {
   return (
     <Group>
       <SettingRow
-        icon={MessageCircleIcon}
+        icon={IconMessageCircleFilled}
         title="Discord Rich Presence"
         description="Show what you're playing on your Discord profile. Talks directly to your local Discord app — nothing is sent anywhere else."
         control={
@@ -499,7 +506,7 @@ function DiscordGroup() {
               className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
             >
               Create a Discord application
-              <ExternalLinkIcon className="size-3" />
+              <IconExternalLink className="size-3" />
             </button>
             <div className="flex flex-col gap-1.5">
               <label
@@ -524,7 +531,7 @@ function DiscordGroup() {
           </div>
 
           <SettingRow
-            icon={ActivityIcon}
+            icon={IconActivity}
             title="Activity type"
             description='The verb in "<verb> <app name>".'
             control={
@@ -540,7 +547,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={TypeIcon}
+            icon={IconTypography}
             title="Track title"
             description='Shown as the "details" line.'
             control={
@@ -552,7 +559,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={Mic2Icon}
+            icon={IconMicrophoneFilled}
             title="Artist"
             description='Shown as the "state" line.'
             control={
@@ -564,7 +571,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={ImageIcon}
+            icon={IconPhotoFilled}
             title="Album art"
             description="Large cover image."
             control={
@@ -576,7 +583,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={DiscAlbumIcon}
+            icon={IconDiscFilled}
             title="Album name"
             description="Shown when hovering the cover."
             control={
@@ -588,7 +595,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={TimerIcon}
+            icon={IconClockFilled}
             title="Elapsed time"
             description="Live progress bar (e.g. 01:36 / 02:51)."
             control={
@@ -600,7 +607,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={MousePointerClickIcon}
+            icon={IconClickFilled}
             title='"Listen" button'
             description="Links back to the track on YouTube Music."
             control={
@@ -612,7 +619,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={FilterIcon}
+            icon={IconFilterFilled}
             title="Only show for songs"
             description="Hide presence for standalone music videos — only share real album songs."
             control={
@@ -624,7 +631,7 @@ function DiscordGroup() {
             }
           />
           <SettingRow
-            icon={EyeOffIcon}
+            icon={IconEyeOffFilled}
             title="Hide while paused"
             description="Clear presence when playback is paused, instead of freezing the bar."
             control={

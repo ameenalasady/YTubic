@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircleIcon } from "lucide-react";
 import { fetchAlbum } from "@/lib/innertube/album";
 import { EntityHeader } from "@/components/shared/entity-header";
 import { AlbumMoreMenu } from "@/components/shared/album-menu";
@@ -9,6 +8,7 @@ import { JumpToCurrentButton } from "@/components/shared/jump-to-current-button"
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { usePlaybackStore } from "@/lib/store/playback";
+import { ErrorCard } from "@/components/shared/error-card";
 
 export const Route = createFileRoute("/album/$id")({
   component: AlbumPageView,
@@ -21,22 +21,18 @@ export const Route = createFileRoute("/album/$id")({
 
 function AlbumPageView() {
   const { id } = Route.useParams();
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["album", id],
     queryFn: () => fetchAlbum(id),
   });
 
   if (error) {
     return (
-      <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-        <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">Couldn't load album</span>
-          <span className="text-muted-foreground">
-            {(error as Error).message}
-          </span>
-        </div>
-      </div>
+      <ErrorCard
+        title="Couldn't load album"
+        message={(error as Error).message}
+        onRetry={() => refetch()}
+      />
     );
   }
 

@@ -33,13 +33,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   // General
   {
     tab: "general",
-    title: "Launch at Startup",
+    title: "Launch at startup",
     description: "Start YTubic automatically when you log in.",
     keywords: "autostart boot login",
   },
   {
     tab: "general",
-    title: "Playback Notifications",
+    title: "Playback notifications",
     description:
       "Show a system notification when the track changes in the background.",
     keywords: "toast alert popup",
@@ -54,7 +54,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   },
   {
     tab: "general",
-    title: "Automatic Updates",
+    title: "Automatic updates",
     description:
       "Download updates quietly and install them on your next restart.",
     keywords: "update upgrade version",
@@ -69,27 +69,27 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   },
   {
     tab: "playback",
-    title: "DJ Bass Swap",
+    title: "DJ bass swap",
     description:
       "Swap basslines during the crossfade so the two tracks don't clash.",
     keywords: "dj mix low end",
   },
   {
     tab: "playback",
-    title: "Smart Mix Timing",
+    title: "Smart mix timing",
     description:
       "Start the mix as the outro begins and skip silent intros and endings.",
     keywords: "dj mix outro intro silence",
   },
   {
     tab: "playback",
-    title: "Volume Normalization",
+    title: "Volume normalization",
     description: "Keep every track at a similar loudness.",
     keywords: "loudness level volume leveling",
   },
   {
     tab: "playback",
-    title: "Mono Audio",
+    title: "Mono audio",
     description: "Play the same audio in both channels.",
     keywords: "stereo channels accessibility",
   },
@@ -101,25 +101,25 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   },
   {
     tab: "playback",
-    title: "Output Device",
+    title: "Output device",
     description: "Where audio is sent when YTubic starts playing.",
     keywords: "speakers headphones audio sink soundcard",
   },
   {
     tab: "playback",
-    title: "Back Button",
+    title: "Back button",
     description: "What happens when you press previous mid-track.",
     keywords: "previous skip restart rewind",
   },
   {
     tab: "playback",
-    title: "Resume Where You Left Off",
+    title: "Resume where you left off",
     description: "Remember the track and position after a restart.",
     keywords: "restore last session position",
   },
   {
     tab: "playback",
-    title: "Varied Radio & Autoplay",
+    title: "Varied radio & autoplay",
     description:
       "Mix more tracks into radio and autoplay and shuffle them a bit, so it isn't the same songs every time.",
     keywords: "randomize random shuffle station variety",
@@ -134,58 +134,58 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   },
   {
     tab: "appearance",
-    title: "Ambient Background",
+    title: "Ambient background",
     description:
       "Tint the window with the current album art, or keep it plain.",
     keywords: "cover colour color blur",
   },
   {
     tab: "appearance",
-    title: "Window Glow",
+    title: "Window glow",
     description: "A soft glowing accent outline around the window edge.",
     keywords: "outline border light neon",
   },
   {
     tab: "appearance",
-    title: "Glow Matches Cover",
+    title: "Glow matches cover",
     description:
       "Tint the window glow with the current cover's dominant color.",
     keywords: "colour adapt album art",
   },
   {
     tab: "appearance",
-    title: "Glow Size",
+    title: "Glow size",
     description: "How far the window glow reaches into the window.",
     keywords: "thickness width slider",
   },
   {
     tab: "appearance",
-    title: "Video Quality",
+    title: "Video quality",
     description:
       "Picture quality for Video mode in immersive fullscreen. Higher takes longer to load the first time.",
     keywords: "720p 1080p 1440p resolution hd",
   },
   {
     tab: "appearance",
-    title: "Rating Buttons",
+    title: "Rating buttons",
     description: "Show a single heart, or separate like and dislike buttons.",
     keywords: "like dislike thumbs heart favourite favorite",
   },
   {
     tab: "appearance",
-    title: "Player Layout",
+    title: "Player layout",
     description: "Choose where the now-playing card lives.",
     keywords: "now playing card sidebar bar position",
   },
   {
     tab: "appearance",
-    title: "Fullscreen Player Layout",
+    title: "Fullscreen player layout",
     description: "How the now-playing screen fills the display.",
     keywords: "immersive cover lyrics video",
   },
   {
     tab: "appearance",
-    title: "Interface Font",
+    title: "Interface font",
     description: "Applies to the whole app. Track and artist names use it too.",
     keywords: "typeface text size",
   },

@@ -7,10 +7,15 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CheckIcon, PlayIcon, PauseIcon, Volume2Icon } from "lucide-react";
+import {
+  IconCheck,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
+} from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { ArtworkOutline } from "@/components/shared/artwork-outline";
 import { Thumbnail } from "@/components/shared/thumbnail";
+import { IconVolumeFilled } from "@/components/shared/filled-icons";
 import {
   TrackContextMenu,
   TrackMoreMenu,
@@ -418,7 +423,7 @@ type RowProps = {
 function SelectedCheck() {
   return (
     <span className="grid size-[22px] place-items-center rounded-full bg-acc1 text-white">
-      <CheckIcon className="size-3" strokeWidth={3.2} />
+      <IconCheck className="size-3" stroke={3.2} />
     </span>
   );
 }
@@ -504,13 +509,13 @@ const TrackRow = memo(function TrackRow({
               </span>
               {isActive ? (
                 playing ? (
-                  <Volume2Icon className="size-4 text-brand" />
+                  <IconVolumeFilled className="size-4 text-brand" />
                 ) : (
-                  <PauseIcon className="size-4 text-brand" />
+                  <IconPlayerPauseFilled className="size-4 text-brand" />
                 )
               ) : (
-                <PlayIcon
-                  className="hidden size-4 fill-current group-hover:block"
+                <IconPlayerPlayFilled
+                  className="hidden size-4 group-hover:block"
                   aria-hidden
                 />
               )}
@@ -540,9 +545,9 @@ const TrackRow = memo(function TrackRow({
                 )}
               >
                 {isActive && playing ? (
-                  <PauseIcon className="size-5 fill-current text-white" />
+                  <IconPlayerPauseFilled className="size-5 text-white" />
                 ) : (
-                  <PlayIcon className="size-5 fill-current text-white" />
+                  <IconPlayerPlayFilled className="size-5 text-white" />
                 )}
               </div>
             </div>

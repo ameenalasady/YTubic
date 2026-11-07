@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { IconCheck } from "@tabler/icons-react";
 import { IconMusicFilled } from "@/components/shared/filled-icons";
-import {
-  IconDotsVertical,
-  IconLoader2,
-  IconVideoFilled,
-} from "@tabler/icons-react";
+import { IconDots, IconLoader2, IconVideoFilled } from "@tabler/icons-react";
 import { playerIconButton } from "@/components/layout/player-chrome";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -103,7 +99,7 @@ export function PlayerMoreMenu({
                 // neighbours — three dots read heavy at 17px.
                 className={cn(playerIconButton, "[&_svg]:size-4", className)}
               >
-                <IconDotsVertical />
+                <IconDots />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>

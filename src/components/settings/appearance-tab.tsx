@@ -100,44 +100,44 @@ export function AppearanceTab() {
             than a two-up segmented control. */}
         <SettingRow
           icon={IconPhotoFilled}
-          title="Ambient Background"
+          title="Ambient background"
           description="Tint the window with the current album art, or keep it plain."
           control={
             <Switch
               checked={background === "ambient"}
               onCheckedChange={(v) => setBackground(v ? "ambient" : "plain")}
-              aria-label="Ambient Background"
+              aria-label="Ambient background"
             />
           }
         />
         <SettingRow
           icon={IconSparkles}
-          title="Window Glow"
+          title="Window glow"
           description="A soft glowing accent outline around the window edge."
           control={
             <Switch
               checked={windowGlow}
               onCheckedChange={setWindowGlow}
-              aria-label="Window Glow"
+              aria-label="Window glow"
             />
           }
         />
         <SettingRow
           icon={IconSparkles}
-          title="Glow Matches Cover"
+          title="Glow matches cover"
           description="Tint the window glow with the current cover's dominant color."
           control={
             <Switch
               checked={windowGlowCover}
               onCheckedChange={setWindowGlowCover}
               disabled={!windowGlow}
-              aria-label="Glow Matches Cover"
+              aria-label="Glow matches cover"
             />
           }
         />
         <SettingRow
           icon={IconSparkles}
-          title="Glow Size"
+          title="Glow size"
           description="How far the window glow reaches into the window."
           control={
             <Slider
@@ -147,14 +147,14 @@ export function AppearanceTab() {
               max={100}
               step={5}
               disabled={!windowGlow}
-              aria-label="Glow Size"
+              aria-label="Glow size"
               className="w-[150px]"
             />
           }
         />
         <SettingRow
           icon={IconPhotoFilled}
-          title="Video Quality"
+          title="Video quality"
           description="Picture quality for Video mode in immersive fullscreen. Higher takes longer to load the first time."
           control={
             <SegmentedControl
@@ -170,7 +170,7 @@ export function AppearanceTab() {
         />
         <SettingRow
           icon={IconHeartFilled}
-          title="Rating Buttons"
+          title="Rating buttons"
           description="Show a single heart, or separate like and dislike buttons."
           control={
             <SegmentedControl
@@ -268,7 +268,7 @@ function PlayerLayoutRow() {
     <div className="flex flex-col">
       <SettingRow
         icon={IconLayoutFilled}
-        title="Player Layout"
+        title="Player layout"
         description="Choose where the now-playing card lives."
       />
       <div role="radiogroup" className="grid grid-cols-3 gap-3 pb-4">
@@ -431,7 +431,7 @@ const PLAYER_TILES: {
 }[] = [
   {
     id: "right",
-    label: "Side Card",
+    label: "Side card",
     body: (on) => (
       <div className="flex h-full">
         <MiniSidebar />
@@ -453,7 +453,7 @@ const PLAYER_TILES: {
   },
   {
     id: "bottom",
-    label: "Bottom Bar",
+    label: "Bottom bar",
     body: (on) => (
       <div className="flex h-full">
         <MiniSidebar />
@@ -526,7 +526,7 @@ function FullscreenLayoutRow() {
     <div className="flex flex-col">
       <SettingRow
         icon={IconAppWindowFilled}
-        title="Fullscreen Player Layout"
+        title="Fullscreen player layout"
         description="How the now-playing screen fills the display."
       />
       <div role="radiogroup" className="grid grid-cols-3 gap-3 pb-4">
@@ -646,7 +646,7 @@ const FS_TILES: {
   },
   {
     id: "lyrics",
-    label: "With Lyrics",
+    label: "With lyrics",
     body: (
       <div className="flex min-h-0 flex-1 items-center gap-3.5 px-5 pb-1.5 pt-2.5">
         <MiniCover />
@@ -660,7 +660,7 @@ const FS_TILES: {
   },
   {
     id: "immersive",
-    label: "Immersive Art",
+    label: "Immersive art",
     body: (
       <>
         <div className="absolute inset-0" style={{ background: DUSK_ART }} />
@@ -682,7 +682,7 @@ function InterfaceFontRow() {
   return (
     <SettingRow
       icon={IconTypography}
-      title="Interface Font"
+      title="Interface font"
       description="Applies to the whole app. Track and artist names use it too."
       control={
         <DropdownMenu>

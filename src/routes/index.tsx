@@ -6,8 +6,9 @@ import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { ShelfSectionSkeleton } from "@/components/shared/skeletons";
 import { useHomeSectionsStore } from "@/lib/store/home-sections";
 import type { Shelf } from "@/lib/innertube/types";
-import { AlertCircleIcon, Loader2Icon, RefreshCwIcon } from "lucide-react";
+import { IconAlertCircle, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { ErrorCard } from "@/components/shared/error-card";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -138,7 +139,7 @@ function HomePage() {
           aria-label="Refresh home feed"
           className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-70"
         >
-          <RefreshCwIcon
+          <IconRefresh
             className={cn("size-3.5", refreshing && "animate-spin")}
           />
           {refreshing ? "Refreshing…" : "Refresh"}
@@ -146,22 +147,11 @@ function HomePage() {
       </div>
 
       {error && shelves.length === 0 ? (
-        <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-          <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-          <div className="flex flex-col gap-1">
-            <span className="font-medium">Couldn't load home feed</span>
-            <span className="text-muted-foreground">
-              {(error as Error).message}
-            </span>
-            <button
-              type="button"
-              onClick={resetFeed}
-              className="mt-1 w-fit text-brand hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
+        <ErrorCard
+          title="Couldn't load home feed"
+          message={(error as Error).message}
+          onRetry={resetFeed}
+        />
       ) : null}
 
       {isLoading || eagerLoadPending ? <HomeSkeleton /> : null}
@@ -174,7 +164,7 @@ function HomePage() {
 
       {error && shelves.length > 0 ? (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <AlertCircleIcon className="size-4 shrink-0 text-destructive" />
+          <IconAlertCircle className="size-4 shrink-0 text-destructive" />
           <span>Couldn't load more — {(error as Error).message}</span>
           <button
             type="button"
@@ -192,7 +182,7 @@ function HomePage() {
           className="flex h-16 items-center justify-center text-muted-foreground"
         >
           {isFetchingNextPage ? (
-            <Loader2Icon className="size-5 animate-spin" />
+            <IconLoader2 className="size-5 animate-spin" />
           ) : null}
         </div>
       ) : null}

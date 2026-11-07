@@ -2,16 +2,16 @@
 // read better filled at this size than the Tabler equivalents. The
 // footer row is Tabler, per the design.
 import {
-  PlayIcon,
-  PauseIcon,
-  SkipBackIcon,
-  SkipForwardIcon,
-  ShuffleIcon,
-  RepeatIcon,
-  Repeat1Icon,
-  Loader2Icon,
-} from "lucide-react";
-import { IconArrowsMaximize } from "@tabler/icons-react";
+  IconArrowsMaximize,
+  IconArrowsShuffle,
+  IconLoader2,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
+  IconPlayerSkipBackFilled,
+  IconPlayerSkipForwardFilled,
+  IconRepeat,
+  IconRepeatOnce,
+} from "@tabler/icons-react";
 import {
   IconVolumeFilled,
   IconVolume2Filled,
@@ -44,7 +44,6 @@ import {
 import { LikeDislikeButtons } from "@/components/shared/like-buttons";
 import { ArtworkOutline } from "@/components/shared/artwork-outline";
 import { ArtistLinks } from "@/components/shared/artist-links";
-import { AlbumLink } from "@/components/shared/album-link";
 import { EntityLink } from "@/components/shared/entity-link";
 import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
 import { PlayerCoverMenu } from "@/components/layout/player-cover-menu";
@@ -558,13 +557,6 @@ export function PlayerBar({
                 Pick a track to start
               </span>
             )}
-            {track?.album ? (
-              <AlbumLink
-                albumId={track.albumId}
-                name={track.album}
-                className="block truncate text-xs text-muted-foreground"
-              />
-            ) : null}
           </div>
           {track ? (
             <LikeDislikeButtons
@@ -601,7 +593,7 @@ export function PlayerBar({
             onClick={() => setShuffle(!shuffle)}
             className={cn(shuffle && "text-brand")}
           >
-            <ShuffleIcon />
+            <IconArrowsShuffle />
           </Button>
           <Button
             variant="ghost"
@@ -610,7 +602,7 @@ export function PlayerBar({
             onClick={prev}
             disabled={!hasTrack}
           >
-            <SkipBackIcon className="fill-current" />
+            <IconPlayerSkipBackFilled />
           </Button>
           <Button
             size="icon"
@@ -620,11 +612,11 @@ export function PlayerBar({
             className="size-12 rounded-full bg-brand text-white hover:bg-brand/90"
           >
             {loading ? (
-              <Loader2Icon className="animate-spin" />
+              <IconLoader2 className="animate-spin" />
             ) : playing ? (
-              <PauseIcon className="fill-current" />
+              <IconPlayerPauseFilled className="size-5" />
             ) : (
-              <PlayIcon className="fill-current" />
+              <IconPlayerPlayFilled className="size-5" />
             )}
           </Button>
           <Button
@@ -634,7 +626,7 @@ export function PlayerBar({
             onClick={next}
             disabled={!hasTrack}
           >
-            <SkipForwardIcon className="fill-current" />
+            <IconPlayerSkipForwardFilled />
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -646,7 +638,7 @@ export function PlayerBar({
                 onClick={cycleRepeat}
                 className={cn(repeat !== "off" && "text-brand")}
               >
-                {repeat === "one" ? <Repeat1Icon /> : <RepeatIcon />}
+                {repeat === "one" ? <IconRepeatOnce /> : <IconRepeat />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{repeatLabel(repeat)}</TooltipContent>

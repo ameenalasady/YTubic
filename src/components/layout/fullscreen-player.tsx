@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HeartIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import { toast } from "sonner";
 import { fetchLikedSongs } from "@/lib/innertube/library";
 import { toggleDisliked, toggleLiked } from "@/lib/like-actions";
@@ -8,16 +7,23 @@ import { useDislikesStore } from "@/lib/store/dislikes";
 import { AnimatePresence, motion } from "motion/react";
 import { useTheme } from "next-themes";
 import {
-  PlayIcon,
-  PauseIcon,
-  SkipBackIcon,
-  SkipForwardIcon,
-  ShuffleIcon,
-  RepeatIcon,
-  Repeat1Icon,
-  Loader2Icon,
-} from "lucide-react";
-import { IconArrowsMinimize, IconVideoOff } from "@tabler/icons-react";
+  IconArrowsMinimize,
+  IconArrowsShuffle,
+  IconLoader2,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
+  IconPlayerSkipBackFilled,
+  IconPlayerSkipForwardFilled,
+  IconRepeat,
+  IconRepeatOnce,
+  IconHeart,
+  IconHeartFilled,
+  IconThumbDown,
+  IconThumbDownFilled,
+  IconThumbUp,
+  IconThumbUpFilled,
+  IconVideoOff,
+} from "@tabler/icons-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import {
@@ -429,7 +435,7 @@ function FullscreenView({ track }: { track: QueueTrack }) {
                 onClick={() => setShuffle(!shuffle)}
                 className={sideButton(shuffle)}
               >
-                <ShuffleIcon className="size-[19px]" />
+                <IconArrowsShuffle className="size-[19px]" />
               </Button>
               <Button
                 variant="ghost"
@@ -438,7 +444,7 @@ function FullscreenView({ track }: { track: QueueTrack }) {
                 onClick={prev}
                 className={ghostButton}
               >
-                <SkipBackIcon className="size-[22px] fill-current" />
+                <IconPlayerSkipBackFilled className="size-[22px]" />
               </Button>
               <Button
                 size="icon"
@@ -453,11 +459,11 @@ function FullscreenView({ track }: { track: QueueTrack }) {
                 {/* Sized on the glyphs themselves: the button's own
                     `[&_svg]` rule only yields to an explicit size-*. */}
                 {loading ? (
-                  <Loader2Icon className="size-[26px] animate-spin" />
+                  <IconLoader2 className="size-[26px] animate-spin" />
                 ) : playing ? (
-                  <PauseIcon className="size-[26px] fill-current" />
+                  <IconPlayerPauseFilled className="size-[26px]" />
                 ) : (
-                  <PlayIcon className="ml-0.5 size-[26px] fill-current" />
+                  <IconPlayerPlayFilled className="ml-0.5 size-[26px]" />
                 )}
               </Button>
               <Button
@@ -467,7 +473,7 @@ function FullscreenView({ track }: { track: QueueTrack }) {
                 onClick={next}
                 className={ghostButton}
               >
-                <SkipForwardIcon className="size-[22px] fill-current" />
+                <IconPlayerSkipForwardFilled className="size-[22px]" />
               </Button>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -480,9 +486,9 @@ function FullscreenView({ track }: { track: QueueTrack }) {
                     className={sideButton(repeat !== "off")}
                   >
                     {repeat === "one" ? (
-                      <Repeat1Icon className="size-[19px]" />
+                      <IconRepeatOnce className="size-[19px]" />
                     ) : (
-                      <RepeatIcon className="size-[19px]" />
+                      <IconRepeat className="size-[19px]" />
                     )}
                   </Button>
                 </TooltipTrigger>
@@ -533,7 +539,14 @@ function LikePill({ track }: { track: QueueTrack }) {
       setBusy(false);
     }
   };
-  const LikeIcon = both ? ThumbsUpIcon : HeartIcon;
+  const LikeIcon = both
+    ? isLiked
+      ? IconThumbUpFilled
+      : IconThumbUp
+    : isLiked
+      ? IconHeartFilled
+      : IconHeart;
+  const DislikeIcon = isDisliked ? IconThumbDownFilled : IconThumbDown;
 
   return (
     <>
@@ -558,10 +571,7 @@ function LikePill({ track }: { track: QueueTrack }) {
             : "bg-w070 text-[color:var(--fs-txt2)]",
         )}
       >
-        <LikeIcon
-          className={cn("size-4", isLiked && "fill-current")}
-          strokeWidth={1.9}
-        />
+        <LikeIcon className="size-4" stroke={1.9} />
         {isLiked ? "Liked" : "Like"}
       </button>
       {both ? (
@@ -588,10 +598,7 @@ function LikePill({ track }: { track: QueueTrack }) {
               : "bg-w080 text-[color:var(--fs-txt2)]",
           )}
         >
-          <ThumbsDownIcon
-            className={cn("size-4", isDisliked && "fill-current")}
-            strokeWidth={1.9}
-          />
+          <DislikeIcon className="size-4" stroke={1.9} />
         </button>
       ) : null}
     </>

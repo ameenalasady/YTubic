@@ -1,7 +1,6 @@
 /**
  * Brand marks (Simple Icons paths) inlined as filled SVGs that inherit
- * `currentColor`. lucide-react ships no brand/social icons, so every
- * spot that needs one (settings integration rows, the About dialog's
+ * `currentColor`. Every spot that needs one (settings integration rows, the About dialog's
  * link buttons) pulls the glyphs from here.
  */
 

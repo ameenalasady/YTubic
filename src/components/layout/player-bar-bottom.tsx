@@ -1,14 +1,15 @@
 import { useRef } from "react";
 import {
-  PlayIcon,
-  PauseIcon,
-  SkipBackIcon,
-  SkipForwardIcon,
-  ShuffleIcon,
-  RepeatIcon,
-  Repeat1Icon,
-} from "lucide-react";
-import { IconLoader2, IconMicrophoneFilled } from "@tabler/icons-react";
+  IconArrowsShuffle,
+  IconLoader2,
+  IconMicrophoneFilled,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
+  IconPlayerSkipBackFilled,
+  IconPlayerSkipForwardFilled,
+  IconRepeat,
+  IconRepeatOnce,
+} from "@tabler/icons-react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Popover,
@@ -45,6 +46,7 @@ import {
 import { PlayerMoreMenu } from "@/components/layout/player-more-menu";
 import { PlayerCoverMenu } from "@/components/layout/player-cover-menu";
 import { cn } from "@/lib/utils";
+import { playerIconButton } from "@/components/layout/player-chrome";
 import { usePlayerCoverDrag } from "@/lib/player-drag";
 import { openCoverLightbox } from "@/lib/store/cover-lightbox";
 import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
@@ -199,7 +201,7 @@ export function PlayerBarBottom() {
             onClick={() => setShuffle(!shuffle)}
             className={cn(shuffle && "text-brand")}
           >
-            <ShuffleIcon />
+            <IconArrowsShuffle />
           </Button>
           <Button
             variant="ghost"
@@ -208,7 +210,7 @@ export function PlayerBarBottom() {
             onClick={prev}
             disabled={!hasTrack}
           >
-            <SkipBackIcon className="fill-current" />
+            <IconPlayerSkipBackFilled />
           </Button>
           <Button
             size="icon"
@@ -220,9 +222,9 @@ export function PlayerBarBottom() {
             {loading ? (
               <IconLoader2 className="animate-spin" />
             ) : playing ? (
-              <PauseIcon className="size-5 fill-current" />
+              <IconPlayerPauseFilled className="size-5" />
             ) : (
-              <PlayIcon className="size-5 fill-current" />
+              <IconPlayerPlayFilled className="size-5" />
             )}
           </Button>
           <Button
@@ -232,7 +234,7 @@ export function PlayerBarBottom() {
             onClick={next}
             disabled={!hasTrack}
           >
-            <SkipForwardIcon className="fill-current" />
+            <IconPlayerSkipForwardFilled />
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -244,7 +246,7 @@ export function PlayerBarBottom() {
                 onClick={cycleRepeat}
                 className={cn(repeat !== "off" && "text-brand")}
               >
-                {repeat === "one" ? <Repeat1Icon /> : <RepeatIcon />}
+                {repeat === "one" ? <IconRepeatOnce /> : <IconRepeat />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{repeatLabel(repeat)}</TooltipContent>
@@ -254,7 +256,11 @@ export function PlayerBarBottom() {
         {/* RIGHT wing: secondary actions, justified to the right edge. */}
         <div className="flex flex-1 items-center justify-end gap-0.5">
           {track ? (
-            <LikeDislikeButtons videoId={track.videoId} meta={track} />
+            <LikeDislikeButtons
+              videoId={track.videoId}
+              meta={track}
+              buttonClassName={playerIconButton}
+            />
           ) : null}
           <LyricsPopover state={lyricsState} />
           <QueuePopover />
@@ -298,7 +304,13 @@ function LyricsPopover({
 }) {
   if (!state.hasTrack) {
     return (
-      <Button variant="ghost" size="icon" disabled aria-label="Lyrics">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled
+        aria-label="Lyrics"
+        className={playerIconButton}
+      >
         <IconMicrophoneFilled />
       </Button>
     );
@@ -308,7 +320,12 @@ function LyricsPopover({
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Lyrics">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Lyrics"
+              className={playerIconButton}
+            >
               <IconMicrophoneFilled />
             </Button>
           </PopoverTrigger>

@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from "react";
-import { PlayIcon, ShuffleIcon } from "lucide-react";
+import { IconArrowsShuffle, IconPlayerPlayFilled } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { ArtworkOutline } from "@/components/shared/artwork-outline";
 import {
@@ -215,7 +215,9 @@ export function EntityPageHeader() {
   return (
     <div
       ref={headerRef}
-      className="pointer-events-none absolute inset-x-0 top-0 z-20"
+      // Named container so header actions can tighten up when the
+      // window is too narrow for their full labels.
+      className="@container/hdr pointer-events-none absolute inset-x-0 top-0 z-20"
       style={{
         height: EXPANDED_HEIGHT + (hasToolbar ? TOOLBAR_HEIGHT : 0),
       }}
@@ -330,17 +332,14 @@ const HeaderActions = memo(function HeaderActions({
   return (
     <>
       {config.onPlay ? (
-        <Button
-          onClick={config.onPlay}
-          className="bg-brand text-white hover:bg-brand/90"
-        >
-          <PlayIcon className="fill-current" />
+        <Button onClick={config.onPlay}>
+          <IconPlayerPlayFilled />
           Play
         </Button>
       ) : null}
       {config.onShuffle ? (
-        <Button variant="outline" onClick={config.onShuffle}>
-          <ShuffleIcon />
+        <Button variant="secondary" onClick={config.onShuffle}>
+          <IconArrowsShuffle />
           Shuffle
         </Button>
       ) : null}

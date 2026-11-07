@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { settingSlug } from "@/components/settings/settings-index";
@@ -23,7 +22,7 @@ export function SettingRow({
   description,
   control,
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   iconClassName?: string;
   title: string;
   /** Stable id the settings search scrolls to; defaults to the title's slug. */

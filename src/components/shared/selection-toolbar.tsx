@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { XIcon } from "lucide-react";
 import {
   IconLoader2,
-  IconPlaylist,
   IconPlayerTrackNextFilled,
+  IconPlaylist,
   IconPlus,
+  IconX,
 } from "@tabler/icons-react";
 import { IconPlaylistAddFilled } from "@/components/shared/filled-icons";
 import { toast } from "sonner";
@@ -198,7 +198,7 @@ export function SelectionToolbar({ tracks, onClear }: Props) {
             onClick={onClear}
             aria-label="Clear selection"
           >
-            <XIcon />
+            <IconX />
           </Button>
           <span
             className={cn(

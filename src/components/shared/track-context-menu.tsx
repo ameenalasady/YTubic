@@ -6,9 +6,9 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontalIcon } from "lucide-react";
 import {
   IconDiscFilled,
+  IconDots,
   IconHeartFilled,
   IconLoader2,
   IconPlayerPlayFilled,
@@ -500,7 +500,7 @@ export function TrackMoreMenu({
             aria-label="More actions"
             onClick={(e) => e.stopPropagation()}
           >
-            <MoreHorizontalIcon className="size-4" />
+            <IconDots className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent

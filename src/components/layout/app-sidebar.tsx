@@ -730,7 +730,7 @@ function UserProfile() {
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={openExternal(MANAGE_GOOGLE_URL)}>
               <IconUserCogFilled />
-              Manage Google Account
+              Manage Google account
               <IconExternalLink className="ms-auto" />
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={openExternal(MANAGE_SUBSCRIPTION_URL)}>

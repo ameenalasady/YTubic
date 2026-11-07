@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
-import { PinIcon } from "lucide-react";
+import { IconPin, IconPinFilled } from "@tabler/icons-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { PlayerBar } from "@/components/layout/player-bar";
@@ -137,7 +137,11 @@ function FloatingTitleBar() {
           pinned ? "text-brand" : "text-foreground/85",
         )}
       >
-        <PinIcon className={cn("size-4", pinned && "fill-current")} />
+        {pinned ? (
+          <IconPinFilled className="size-4" />
+        ) : (
+          <IconPin className="size-4" />
+        )}
       </button>
       <button
         type="button"

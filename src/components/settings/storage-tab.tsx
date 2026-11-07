@@ -1,25 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import {
-  ArrowDownWideNarrowIcon,
-  CalendarClockIcon,
-  ChevronDownIcon,
-  DatabaseIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  GaugeIcon,
-  HardDriveIcon,
-  ImageIcon,
-  LibraryIcon,
-  Loader2Icon,
-  MusicIcon,
-  SearchIcon,
-  Trash2Icon,
-  type LucideIcon,
-} from "lucide-react";
+  IconBookmarks,
+  IconCalendarFilled,
+  IconChevronDown,
+  IconDatabaseFilled,
+  IconFolderFilled,
+  IconFolderOpen,
+  IconGaugeFilled,
+  IconLoader2,
+  IconPhotoFilled,
+  IconSearch,
+  IconSortDescending,
+  IconTrash,
+} from "@tabler/icons-react";
+import { IconMusicFilled } from "@/components/shared/filled-icons";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,14 +84,14 @@ function StatCard({
   label,
   value,
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   value: string;
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-[10px] border bg-background p-4 shadow-xs dark:border-input dark:bg-input/30">
+    <div className="flex flex-col gap-1 rounded-[10px] border border-w070 bg-w050 p-4">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className="size-3.5 text-foreground" />
+        <Icon className="size-3.5 text-t5" />
         {label}
       </div>
       <span className="text-2xl font-bold tracking-tight tabular-nums leading-none">
@@ -119,17 +124,17 @@ function StorageStats() {
     // TabPane draws between it and the first settings row.
     <div className="grid grid-cols-3 gap-3 pb-4">
       <StatCard
-        icon={MusicIcon}
+        icon={IconMusicFilled}
         label="Cached tracks"
         value={cache.data ? String(cache.data.length) : "…"}
       />
       <StatCard
-        icon={HardDriveIcon}
+        icon={IconDatabaseFilled}
         label="Used by tracks"
         value={cache.data ? formatBytes(trackBytes) : "…"}
       />
       <StatCard
-        icon={ImageIcon}
+        icon={IconPhotoFilled}
         label="Used by covers"
         value={covers.data ? formatBytes(covers.data.bytes) : "…"}
       />
@@ -181,7 +186,7 @@ function CacheFolderGroup() {
   return (
     <Group>
       <SettingRow
-        icon={FolderIcon}
+        icon={IconFolderFilled}
         title="Cache folder"
         description={
           info.data ? (
@@ -210,7 +215,7 @@ function CacheFolderGroup() {
               </Button>
             ) : null}
             <Button variant="outline" size="sm" onClick={() => void change()}>
-              <FolderOpenIcon />
+              <IconFolderOpen />
               Change
             </Button>
           </div>
@@ -277,7 +282,7 @@ function StorageLimitGroup() {
     <Group>
       <div className="flex flex-col">
         <SettingRow
-          icon={GaugeIcon}
+          icon={IconGaugeFilled}
           title="Storage limit"
           description={
             limit === 0
@@ -293,7 +298,7 @@ function StorageLimitGroup() {
                   disabled={limitQuery.isLoading}
                 >
                   {limitQuery.isLoading ? "…" : current}
-                  <ChevronDownIcon className="opacity-50" />
+                  <IconChevronDown className="opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-36">
@@ -375,7 +380,7 @@ function AutoCleanRow({ loggedIn }: { loggedIn: boolean }) {
 
   return (
     <SettingRow
-      icon={CalendarClockIcon}
+      icon={IconCalendarFilled}
       title="Auto-clean tracks not in library"
       description={description}
       control={
@@ -597,24 +602,23 @@ function CacheGroup({ loggedIn }: { loggedIn: boolean }) {
   // controls and state.
   const headerToolbar = (
     <div className="flex flex-col gap-4 py-4">
-      <div className="flex items-center gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
-          <DatabaseIcon className="size-[18px] text-muted-foreground" />
+      <div className="flex items-center gap-3.5">
+        <div className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-w070 bg-w050">
+          <IconDatabaseFilled className="size-4 text-t5" />
         </div>
         <div className="min-w-0 flex-1">
-          <span className="text-[15px] font-medium leading-none">
+          <span className="text-sm font-semibold leading-none text-t2">
             Cached tracks
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button
-            variant="outline"
+            variant="destructive"
             size="sm"
             onClick={clearAll}
             disabled={bulkBusy || !cache.data?.length}
-            className="border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive/10 hover:text-destructive dark:border-destructive/50 dark:hover:bg-destructive/10"
           >
-            Clear All
+            Clear all
           </Button>
           <Button
             variant="outline"
@@ -626,16 +630,16 @@ function CacheGroup({ loggedIn }: { loggedIn: boolean }) {
             disabled={bulkBusy || !library.data || otherCount === 0}
           >
             {bulkBusy ? (
-              <Loader2Icon className="animate-spin" />
+              <IconLoader2 className="animate-spin" />
             ) : (
-              <Trash2Icon />
+              <IconTrash />
             )}
-            Clear Others
+            Clear others
           </Button>
         </div>
       </div>
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -670,9 +674,9 @@ function CacheGroup({ loggedIn }: { loggedIn: boolean }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm">
-              <ArrowDownWideNarrowIcon />
+              <IconSortDescending />
               {SORT_LABELS[sort]}
-              <ChevronDownIcon className="opacity-50" />
+              <IconChevronDown className="opacity-50" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-36">
@@ -804,7 +808,7 @@ function CacheRow({
               // title/aria-label instead of a visible caption.
               className="bg-emerald-500/15 px-1 text-emerald-600 dark:text-emerald-400"
             >
-              <LibraryIcon className="size-3" />
+              <IconBookmarks className="size-3" />
             </Badge>
           )}
         </div>
@@ -825,9 +829,9 @@ function CacheRow({
         className="text-muted-foreground hover:text-destructive"
       >
         {isDeleting ? (
-          <Loader2Icon className="size-4 animate-spin" />
+          <IconLoader2 className="size-4 animate-spin" />
         ) : (
-          <Trash2Icon className="size-4" />
+          <IconTrash className="size-4" />
         )}
       </Button>
     </div>
@@ -874,7 +878,7 @@ function CoverCacheGroup() {
   return (
     <Group>
       <SettingRow
-        icon={ImageIcon}
+        icon={IconPhotoFilled}
         title="Cover art cache"
         control={
           // Counts live in the stat cards up top — the row keeps just
@@ -885,7 +889,7 @@ function CoverCacheGroup() {
             onClick={clear}
             disabled={busy || !stats.data?.count}
           >
-            {busy ? <Loader2Icon className="animate-spin" /> : <Trash2Icon />}
+            {busy ? <IconLoader2 className="animate-spin" /> : <IconTrash />}
             Clear
           </Button>
         }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GripVerticalIcon, HomeIcon } from "lucide-react";
+import { IconGripVertical, IconHomeFilled } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
 import { useHomeSectionsStore } from "@/lib/store/home-sections";
@@ -29,7 +29,7 @@ export function HomeTab() {
     <TabPane>
       <Group>
         <SettingRow
-          icon={HomeIcon}
+          icon={IconHomeFilled}
           title="Section order"
           description="Drag to reorder the sections shown on the Home page."
           control={
@@ -120,7 +120,7 @@ function HomeSectionRow({
           "before:pointer-events-none before:absolute before:inset-x-1 before:-top-px before:h-0.5 before:rounded-full before:bg-brand",
       )}
     >
-      <GripVerticalIcon className="size-4 shrink-0 text-muted-foreground/60" />
+      <IconGripVertical className="size-4 shrink-0 text-muted-foreground/60" />
       <span className="truncate text-sm">{title}</span>
     </div>
   );

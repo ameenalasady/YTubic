@@ -1,11 +1,11 @@
 import { useCallback } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  TrendingUpIcon,
-  SparklesIcon,
-  SmileIcon,
-  type LucideIcon,
-} from "lucide-react";
+  IconMoodSmile,
+  IconSparkles,
+  IconTrendingUp,
+  type TablerIcon,
+} from "@tabler/icons-react";
 import { ArtworkOutline } from "@/components/shared/artwork-outline";
 import { FeedView } from "@/components/shared/feed-view";
 import { fetchExploreFeedPage } from "@/lib/innertube/explore";
@@ -18,7 +18,7 @@ const SUBPAGES: {
   to: "/charts" | "/new-releases" | "/moods";
   label: string;
   blurb: string;
-  icon: LucideIcon;
+  icon: TablerIcon;
   // Tailwind gradient classes — kept inline so each tile has its own
   // distinct accent without a theme-wide token.
   gradient: string;
@@ -27,21 +27,21 @@ const SUBPAGES: {
     to: "/charts",
     label: "Charts",
     blurb: "Top songs, videos, and artists",
-    icon: TrendingUpIcon,
+    icon: IconTrendingUp,
     gradient: "bg-gradient-to-br from-[#170D35] to-[#560157]",
   },
   {
     to: "/new-releases",
     label: "New releases",
     blurb: "New albums, singles, and videos",
-    icon: SparklesIcon,
+    icon: IconSparkles,
     gradient: "bg-gradient-to-br from-[#0F0100] to-[#8E1B10]",
   },
   {
     to: "/moods",
     label: "Moods & genres",
     blurb: "Browse by mood, vibe, and genre",
-    icon: SmileIcon,
+    icon: IconMoodSmile,
     gradient: "bg-gradient-to-br from-[#03112E] to-[#263A7D]",
   },
 ];

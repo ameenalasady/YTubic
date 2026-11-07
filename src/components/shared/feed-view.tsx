@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { AlertCircleIcon, Loader2Icon } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { ShelfCarousel } from "@/components/shared/shelf-carousel";
 import { ShelfGrid } from "@/components/shared/shelf-grid";
 import { ShelfSectionSkeleton } from "@/components/shared/skeletons";
 import type { Shelf } from "@/lib/innertube/types";
+import { ErrorCard } from "@/components/shared/error-card";
 
 export type FeedPage = {
   shelves: Shelf[];
@@ -82,22 +83,11 @@ export function FeedView({
       {header}
 
       {error ? (
-        <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-          <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-          <div className="flex flex-col gap-1">
-            <span className="font-medium">{errorLabel}</span>
-            <span className="text-muted-foreground">
-              {(error as Error).message}
-            </span>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="mt-1 w-fit text-brand hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
+        <ErrorCard
+          title={errorLabel}
+          message={(error as Error).message}
+          onRetry={() => refetch()}
+        />
       ) : null}
 
       {isLoading ? <FeedSkeleton /> : null}
@@ -116,7 +106,7 @@ export function FeedView({
           className="flex h-16 items-center justify-center text-muted-foreground"
         >
           {isFetchingNextPage ? (
-            <Loader2Icon className="size-5 animate-spin" />
+            <IconLoader2 className="size-5 animate-spin" />
           ) : null}
         </div>
       ) : null}

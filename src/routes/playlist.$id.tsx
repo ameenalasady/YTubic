@@ -2,14 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
-  AlertCircleIcon,
-  ArrowDownAZIcon,
-  CheckIcon,
-  Loader2Icon,
-  SearchIcon,
-  Share2Icon,
-  XIcon,
-} from "lucide-react";
+  IconChevronDown,
+  IconLoader2,
+  IconSearch,
+  IconShare3,
+  IconSortDescending,
+  IconX,
+} from "@tabler/icons-react";
 import {
   fetchPlaylistContinuation,
   fetchPlaylistFirstPage,
@@ -31,8 +30,9 @@ import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -43,6 +43,7 @@ import {
   usePlaylistSortStore,
   type PlaylistSortMode,
 } from "@/lib/store/playlist-sort";
+import { ErrorCard } from "@/components/shared/error-card";
 
 export const Route = createFileRoute("/playlist/$id")({
   component: PlaylistPageView,
@@ -169,13 +170,11 @@ function PlaylistPageView() {
   // sort/search drain that fires 100+ continuations).
   if (query.error && !header) {
     return (
-      <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-        <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">Couldn't load playlist</span>
-          <span className="text-muted-foreground">{query.error.message}</span>
-        </div>
-      </div>
+      <ErrorCard
+        title="Couldn't load playlist"
+        message={query.error.message}
+        onRetry={() => query.refetch()}
+      />
     );
   }
 
@@ -294,7 +293,7 @@ function PlaylistPageView() {
                   )
                 }
               >
-                <Share2Icon />
+                <IconShare3 />
               </Button>
             </>
           )
@@ -324,7 +323,7 @@ function PlaylistPageView() {
         ) : null}
         {(sortMode !== "default" || normalizedQuery) && query.hasNextPage ? (
           <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2Icon className="size-3 animate-spin" />
+            <IconLoader2 className="size-3 animate-spin" />
             {normalizedQuery
               ? "Loading full playlist for search…"
               : "Loading full playlist for sort…"}
@@ -349,7 +348,7 @@ function PlaylistPageView() {
         >
           {query.isFetchingNextPage ? (
             <>
-              <Loader2Icon className="mr-2 size-4 animate-spin" />
+              <IconLoader2 className="mr-2 size-4 animate-spin" />
               Loading more…
             </>
           ) : (
@@ -451,7 +450,7 @@ function SearchInput({
 }) {
   return (
     <div className="relative flex-1">
-      <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       {/* The shared Input carries the translucent fill and hairline that
           the sort button and the Search tab's field already use — only
           the compact height and the icon padding are local. */}
@@ -469,7 +468,7 @@ function SearchInput({
           aria-label="Clear search"
           className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
         >
-          <XIcon className="size-3.5" />
+          <IconX className="size-3.5" />
         </button>
       ) : null}
     </div>
@@ -503,23 +502,24 @@ function SortMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm">
-          <ArrowDownAZIcon />
+          <IconSortDescending />
           {labelFor(mode)}
+          <IconChevronDown className="opacity-50" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56">
         <DropdownMenuLabel>Sort by</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {options.map((m) => (
-          <DropdownMenuItem
-            key={m}
-            onSelect={() => onChange(m)}
-            className="justify-between"
-          >
-            <span>{labelFor(m)}</span>
-            {mode === m ? <CheckIcon className="size-4" /> : null}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={(v) => onChange(v as PlaylistSortMode)}
+        >
+          {options.map((m) => (
+            <DropdownMenuRadioItem key={m} value={m}>
+              {labelFor(m)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
