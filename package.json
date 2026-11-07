@@ -71,5 +71,10 @@
     "vite": "^7.0.4",
     "vitest": "^4.1.9",
     "youtubei.js": "^17.0.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

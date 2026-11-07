@@ -20,6 +20,9 @@
 //!   (whose .deb/.rpm came from the Releases page, so guidance points
 //!   back there — no repo carries this package).
 
+// Only the Linux detection below touches the filesystem or spawns
+// package managers; elsewhere these would be dead code.
+#[cfg(target_os = "linux")]
 use std::path::Path;
 
 #[derive(serde::Serialize, Clone, Copy)]
@@ -44,6 +47,7 @@ const IN_APP: UpdateSource = UpdateSource {
 /// True when the running binary lives where system packages install
 /// (`/usr/local` deliberately excluded — user-owned manual installs
 /// keep the in-app path).
+#[cfg(target_os = "linux")]
 fn exe_is_system_owned() -> bool {
     match std::env::current_exe() {
         Ok(exe) => {
@@ -59,6 +63,7 @@ fn exe_is_system_owned() -> bool {
 /// Precise AUR proof: is this exact binary tracked by pacman?
 /// `pacman -Qqo <path>` exits 0 with the owning package, non-zero
 /// otherwise. Local db read, no root, milliseconds.
+#[cfg(target_os = "linux")]
 fn pacman_owns_exe() -> bool {
     let exe = match std::env::current_exe() {
         Ok(p) => p.to_string_lossy().into_owned(),
@@ -75,6 +80,7 @@ fn pacman_owns_exe() -> bool {
 /// First AUR helper that actually runs, checked in preference order.
 /// Only consulted for AUR installs, so a stray helper binary on a
 /// deb/rpm system never surfaces in the UI.
+#[cfg(target_os = "linux")]
 fn aur_helper() -> &'static str {
     for h in ["paru", "yay", "pikaur"] {
         let runs = std::process::Command::new(h)
