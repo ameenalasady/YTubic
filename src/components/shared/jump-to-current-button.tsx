@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconArrowDown, IconArrowUp } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { usePlaybackStore, currentTrack } from "@/lib/store/playback";
 import { useLayoutStore } from "@/lib/store/layout";
 import { usePanelsStore, CARD_CONTENT_GAP } from "@/lib/store/panels";
 import { useSelectionStore } from "@/lib/store/selection";
+import { findActiveIndex } from "@/lib/track-match";
 import type { ShelfItem } from "@/lib/innertube/types";
 
 type Props = {
@@ -44,9 +45,13 @@ export function JumpToCurrentButton({ tracks }: Props) {
   const [activeAbove, setActiveAbove] = useState(false);
 
   const activeVideoId = active?.videoId;
-  const inList = activeVideoId
-    ? tracks.some((t) => t.id === activeVideoId)
-    : false;
+  // Same matching as TrackList, so the pill shows for a row that is the
+  // other (audio/video) version of the playing song.
+  const activeDuration = usePlaybackStore((s) => s.duration);
+  const inList = useMemo(
+    () => findActiveIndex(tracks, active, activeDuration) >= 0,
+    [tracks, active, activeDuration],
+  );
 
   // Watch the active row's position vs. the scroll viewport. Need this
   // for two things: hiding the pill when the row is already on screen,

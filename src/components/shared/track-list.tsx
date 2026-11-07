@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -16,6 +17,7 @@ import { Link } from "@tanstack/react-router";
 import { ArtworkOutline } from "@/components/shared/artwork-outline";
 import { Thumbnail } from "@/components/shared/thumbnail";
 import { IconVolumeFilled } from "@/components/shared/filled-icons";
+import { findActiveIndex } from "@/lib/track-match";
 import {
   TrackContextMenu,
   TrackMoreMenu,
@@ -111,6 +113,13 @@ export function TrackList({
 }: Props) {
   const active = usePlaybackStore(currentTrack);
   const playing = usePlaybackStore((s) => s.playing);
+  const activeDuration = usePlaybackStore((s) => s.duration);
+  // The playing row, by id or, failing that, by matching the song itself
+  // (the list may carry the other of its audio/video ids).
+  const activeIndex = useMemo(
+    () => findActiveIndex(tracks, active, activeDuration),
+    [tracks, active, activeDuration],
+  );
   const sourcePrefs = useTrackSourceStore((s) => s.byVideoId);
 
   // Multi-select, by row index. Shift- or Ctrl/Cmd-click toggles a row;
@@ -304,7 +313,8 @@ export function TrackList({
               hideThumbnails={hideThumbnails}
               showAlbum={showAlbum}
               showPlays={showPlays}
-              isActive={active?.videoId === t.id}
+              isActive={idx === activeIndex}
+              activeVideoId={idx === activeIndex ? active?.videoId : undefined}
               playing={playing}
               videoSourceSelected={sourcePrefs[t.id]?.selected === "video"}
               removal={removal}
@@ -326,9 +336,6 @@ export function TrackList({
   // active row's absolute Y position so the existing scroll-into-view
   // logic keeps working without coupling JumpToCurrent to the
   // virtualizer.
-  const activeIndex = active
-    ? tracks.findIndex((t) => t.id === active.videoId)
-    : -1;
   const items = virtualizer.getVirtualItems();
   const activeInWindow =
     activeIndex >= 0 && items.some((vi) => vi.index === activeIndex);
@@ -383,7 +390,10 @@ export function TrackList({
                 hideThumbnails={hideThumbnails}
                 showAlbum={showAlbum}
                 showPlays={showPlays}
-                isActive={active?.videoId === t.id}
+                isActive={idx === activeIndex}
+                activeVideoId={
+                  idx === activeIndex ? active?.videoId : undefined
+                }
                 playing={playing}
                 videoSourceSelected={sourcePrefs[t.id]?.selected === "video"}
                 removal={removal}
@@ -410,6 +420,10 @@ type RowProps = {
   showAlbum: boolean;
   showPlays: boolean;
   isActive: boolean;
+  /** The playing id, on the active row. It can differ from `track.id` when
+   *  the row is the other version of the song; JumpToCurrentButton finds
+   *  the row by it. */
+  activeVideoId?: string;
   playing: boolean;
   videoSourceSelected: boolean;
   removal?: PlaylistRemovalContext;
@@ -437,6 +451,7 @@ const TrackRow = memo(function TrackRow({
   showAlbum,
   showPlays,
   isActive,
+  activeVideoId,
   playing,
   videoSourceSelected,
   removal,
@@ -447,7 +462,7 @@ const TrackRow = memo(function TrackRow({
 }: RowProps) {
   const row = (
     <li
-      data-videoid={t.id}
+      data-videoid={activeVideoId ?? t.id}
       data-selected={selected || undefined}
       style={{ gridTemplateColumns: gridTemplate }}
       className={cn(
