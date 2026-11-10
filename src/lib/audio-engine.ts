@@ -11,7 +11,11 @@ import { toggleLiked } from "@/lib/like-actions";
 import { fetchWatchQueueContinuation } from "@/lib/innertube/radio";
 import { fetchVariedRadio } from "@/lib/innertube/radio-variety";
 import { prefetchStream, saveTrackMeta, streamUrlFor } from "@/lib/stream";
-import { AudioGraph, canSelectOutputDevice } from "@/lib/audio-graph";
+import {
+  AudioGraph,
+  canSelectOutputDevice,
+  primeOutputStream,
+} from "@/lib/audio-graph";
 import { analyzeTrack, peekAnalysis, planMix } from "@/lib/track-analysis";
 import { consumeFadeInto } from "@/lib/fade-request";
 import { usePlaybackStore, type QueueTrack } from "@/lib/store/playback";
@@ -78,12 +82,26 @@ type Fade = {
 /** Perceived-loudness curve for the volume slider (see the volume effect). */
 const elementVolume = (volume: number) => Math.max(0, Math.min(1, volume)) ** 3;
 
+/** Set an element's level (0..1, after the slider curve) or mute. Once the
+ *  graph is built these go to the element's fader instead; see
+ *  AudioGraph.setVolume. */
+function setElVolume(g: AudioGraph | null, el: HTMLAudioElement, v: number) {
+  if (!g?.setVolume(el, v)) el.volume = v;
+}
+function setElMuted(g: AudioGraph | null, el: HTMLAudioElement, m: boolean) {
+  if (!g?.setMuted(el, m)) el.muted = m;
+}
+
 export function useAudioEngine() {
   // The element currently owning playback; `audioRef` keeps the name the
   // effects below were written against.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const standbyRef = useRef<HTMLAudioElement | null>(null);
   const graphRef = useRef<AudioGraph | null>(null);
+  // The graph is built asynchronously (see ensureGraph); this flips once
+  // it exists so the effects that configure it run again.
+  const graphBuildRef = useRef<Promise<void> | null>(null);
+  const [graphReady, setGraphReady] = useState(false);
   const pendingRef = useRef<PendingNext | null>(null);
   const fadeRef = useRef<Fade | null>(null);
   // Set when a crossfade moves the store to the next track: the resolve
@@ -185,7 +203,11 @@ export function useAudioEngine() {
     f.from.pause();
     f.from.removeAttribute("src");
     f.from.load();
-    f.to.volume = elementVolume(usePlaybackStore.getState().volume);
+    setElVolume(
+      graphRef.current,
+      f.to,
+      elementVolume(usePlaybackStore.getState().volume),
+    );
     graphRef.current?.resetBass();
   };
 
@@ -198,28 +220,45 @@ export function useAudioEngine() {
       const base = elementVolume(usePlaybackStore.getState().volume);
       const t = Math.min(1, (performance.now() - started) / ms);
       // Equal-power ramp: the sum of the two stays at a steady loudness.
-      fade.from.volume = base * Math.cos((t * Math.PI) / 2);
-      fade.to.volume = base * Math.sin((t * Math.PI) / 2);
+      setElVolume(
+        graphRef.current,
+        fade.from,
+        base * Math.cos((t * Math.PI) / 2),
+      );
+      setElVolume(
+        graphRef.current,
+        fade.to,
+        base * Math.sin((t * Math.PI) / 2),
+      );
       if (t >= 1) onDone();
     }, CROSSFADE_TICK_MS);
   };
 
   /** Build the WebAudio graph on first need and route both elements
-   *  through it. One-way: elements cannot be detached again. */
+   *  through it. One-way: elements cannot be detached again. Returns the
+   *  graph once it exists; the first call starts building it and returns
+   *  null, and `graphReady` flips when it is done. On Linux the build
+   *  waits ~0.3 s for primeOutputStream, which keeps the new output
+   *  stream from starting muted or quiet. */
   const ensureGraph = (): AudioGraph | null => {
     if (graphRef.current) return graphRef.current;
-    if (typeof AudioContext === "undefined") return null;
-    try {
-      const g = new AudioGraph();
-      graphRef.current = g;
-      for (const el of [audioRef.current, standbyRef.current]) {
-        if (el) g.attach(el);
-      }
-      return g;
-    } catch (e) {
-      if (import.meta.env.DEV) console.error("[audio] graph failed:", e);
+    if (typeof AudioContext === "undefined" || graphBuildRef.current) {
       return null;
     }
+    graphBuildRef.current = (IS_LINUX ? primeOutputStream() : Promise.resolve())
+      .then(() => {
+        const g = new AudioGraph();
+        for (const el of [audioRef.current, standbyRef.current]) {
+          if (el) g.attach(el);
+        }
+        graphRef.current = g;
+        setGraphReady(true);
+      })
+      .catch((e) => {
+        graphBuildRef.current = null;
+        if (import.meta.env.DEV) console.error("[audio] graph failed:", e);
+      });
+    return null;
   };
 
   // Wire element → store events. Both elements are listened to; events
@@ -331,8 +370,8 @@ export function useAudioEngine() {
     ) => {
       const to = next.el;
       pendingRef.current = null;
-      to.muted = store().muted;
-      to.volume = 0;
+      setElMuted(graphRef.current, to, store().muted);
+      setElVolume(graphRef.current, to, 0);
       // Swap roles first so the incoming element's `playing` counts as
       // the active one, then tell the store, whose track change the
       // resolve effect below recognises via adoptRef and leaves alone.
@@ -568,8 +607,8 @@ export function useAudioEngine() {
       audioRef.current = to;
       standbyRef.current = from;
       loadedStreamRef.current = streamVideoId;
-      to.muted = st.muted;
-      to.volume = 0;
+      setElMuted(graphRef.current, to, st.muted);
+      setElVolume(graphRef.current, to, 0);
       st.setStatus("loading");
       void saveTrackMeta(
         streamVideoId,
@@ -631,8 +670,8 @@ export function useAudioEngine() {
       const to = standbyRef.current;
       const newId = streamVideoId;
       const token = ++resolveTokenRef.current;
-      to.muted = from.muted;
-      to.volume = 0;
+      setElMuted(graphRef.current, to, usePlaybackStore.getState().muted);
+      setElVolume(graphRef.current, to, 0);
       const fail = () => {
         if (token !== resolveTokenRef.current) return;
         to.removeAttribute("src");
@@ -664,7 +703,7 @@ export function useAudioEngine() {
             } else {
               // Paused while it loaded: swap in place, no ramp.
               to.pause();
-              to.volume = elementVolume(st.volume);
+              setElVolume(graphRef.current, to, elementVolume(st.volume));
               from.pause();
               from.removeAttribute("src");
               from.load();
@@ -855,16 +894,18 @@ export function useAudioEngine() {
     // Apply a cubic curve so the slider tracks perceived loudness.
     // During a crossfade the ramp owns both elements' volumes and reads
     // the store's value on every tick, so only mute is applied here.
-    if (!fadeRef.current) el.volume = elementVolume(volume);
-    el.muted = muted;
+    if (!fadeRef.current)
+      setElVolume(graphRef.current, el, elementVolume(volume));
+    setElMuted(graphRef.current, el, muted);
     const standby = standbyRef.current;
-    if (standby) standby.muted = muted;
+    if (standby) setElMuted(graphRef.current, standby, muted);
   }, [volume, muted]);
 
   // Equaliser, mono and normalisation follow the Playback settings. The
   // graph is built the first time any of them is switched on (or an output
   // device is chosen) and stays for the session; while all are off it is
-  // never built, so a plain <audio> path remains the default.
+  // never built, so a plain <audio> path remains the default. The build is
+  // asynchronous, so this runs again once `graphReady` flips.
   const {
     eqEnabled,
     eqPreset,
@@ -900,6 +941,7 @@ export function useAudioEngine() {
     if (usePlaybackStore.getState().playing) g.resume();
   }, [
     wantsGraph,
+    graphReady,
     eqEnabled,
     eqPreset,
     eqCustomGains,
@@ -923,9 +965,9 @@ export function useAudioEngine() {
     void apply.catch((e) => {
       if (import.meta.env.DEV) console.warn("[audio] setSinkId failed:", e);
     });
-    // `wantsGraph` so the sink is re-applied on the context the moment the
+    // `graphReady` so the sink is re-applied on the context the moment the
     // graph takes over rendering from the elements.
-  }, [outputDeviceId, wantsGraph]);
+  }, [outputDeviceId, graphReady]);
 
   // Handle seek requests.
   const pendingSeek = usePlaybackStore((s) => s.pendingSeek);

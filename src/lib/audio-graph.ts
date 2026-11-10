@@ -3,7 +3,8 @@ import { EQ_BANDS } from "@/lib/store/playback-settings";
 /**
  * The WebAudio chain behind the player's <audio> elements:
  *
- *   element(s) -> head -> 9 x BiquadFilter -> mono -> [compressor] -> destination
+ *   element -> fader -> deck bass -> head -> 9 x BiquadFilter -> mono
+ *     -> [compressor] -> destination
  *
  * Built lazily by the audio engine the first time the equaliser, mono,
  * normalisation or a non-default output device is switched on. Once an
@@ -15,6 +16,9 @@ import { EQ_BANDS } from "@/lib/store/playback-settings";
  * the stream server must answer with CORS headers (it does, through the
  * permissive `CorsLayer` on the axum router); a tainted element does not
  * throw here, it just yields silence.
+ *
+ * Once an element is attached its own `volume` and `muted` are left at 1
+ * and off, and its fader carries the level instead (see `setVolume`).
  */
 
 /** `setSinkId` is missing from the DOM lib on AudioContext. */
@@ -25,6 +29,14 @@ const dbToGain = (db: number) => 10 ** (db / 20);
 /** How far the bass of a track is pulled down while it is not "on deck". */
 const MIX_BASS_CUT_DB = -32;
 
+/** One attached element: its level and its DJ-mix low shelf. */
+type Deck = {
+  fader: GainNode;
+  bass: BiquadFilterNode;
+  volume: number;
+  muted: boolean;
+};
+
 export class AudioGraph {
   readonly ctx: AudioContext;
   private readonly head: GainNode;
@@ -33,9 +45,7 @@ export class AudioGraph {
   private readonly compressor: DynamicsCompressorNode;
   private readonly tail: GainNode;
   private normalize = false;
-  private readonly sources = new WeakSet<HTMLMediaElement>();
-  /** Per-element low shelf, used to swap basslines during a DJ mix. */
-  private readonly decks = new Map<HTMLMediaElement, BiquadFilterNode>();
+  private readonly decks = new Map<HTMLMediaElement, Deck>();
 
   constructor() {
     const ctx = new AudioContext({ latencyHint: "playback" });
@@ -85,17 +95,61 @@ export class AudioGraph {
     this.tail.connect(ctx.destination);
   }
 
-  /** Route an element through the graph. Idempotent per element. */
+  /**
+   * Route an element through the graph. Idempotent per element. The
+   * element's current volume and mute move onto its fader, and the
+   * element itself is set to full volume, unmuted.
+   */
   attach(el: HTMLMediaElement): void {
-    if (this.sources.has(el)) return;
-    this.sources.add(el);
+    if (this.decks.has(el)) return;
+    const fader = this.ctx.createGain();
     const bass = this.ctx.createBiquadFilter();
     bass.type = "lowshelf";
     bass.frequency.value = 220;
     bass.gain.value = 0;
-    this.ctx.createMediaElementSource(el).connect(bass);
+    const deck: Deck = { fader, bass, volume: el.volume, muted: el.muted };
+    fader.gain.value = deck.muted ? 0 : deck.volume;
+    this.ctx.createMediaElementSource(el).connect(fader);
+    fader.connect(bass);
     bass.connect(this.head);
-    this.decks.set(el, bass);
+    this.decks.set(el, deck);
+    el.volume = 1;
+    el.muted = false;
+  }
+
+  /**
+   * An attached element's level, on the same 0..1 scale as
+   * `HTMLMediaElement.volume`. Returns false for an element the graph
+   * does not own, which should then be set directly.
+   *
+   * The element's own volume can't be used once it is attached:
+   * WebKitGTK taps the audio before the element's volume and mute are
+   * applied, so they stop doing anything, while Chromium applies them
+   * before the graph, so using both there would apply the level twice.
+   */
+  setVolume(el: HTMLMediaElement, volume: number): boolean {
+    const deck = this.decks.get(el);
+    if (!deck) return false;
+    deck.volume = volume;
+    this.applyLevel(deck);
+    return true;
+  }
+
+  /** Mute counterpart of `setVolume`. */
+  setMuted(el: HTMLMediaElement, muted: boolean): boolean {
+    const deck = this.decks.get(el);
+    if (!deck) return false;
+    deck.muted = muted;
+    this.applyLevel(deck);
+    return true;
+  }
+
+  private applyLevel(deck: Deck): void {
+    const t = this.ctx.currentTime;
+    const g = deck.fader.gain;
+    g.cancelScheduledValues(t);
+    // A short glide so the 40 ms crossfade steps and mute don't click.
+    g.setTargetAtTime(deck.muted ? 0 : deck.volume, t, 0.01);
   }
 
   /**
@@ -109,8 +163,8 @@ export class AudioGraph {
     incoming: HTMLMediaElement,
     seconds: number,
   ): void {
-    const out = this.decks.get(outgoing);
-    const inn = this.decks.get(incoming);
+    const out = this.decks.get(outgoing)?.bass;
+    const inn = this.decks.get(incoming)?.bass;
     if (!out || !inn) return;
     const t = this.ctx.currentTime;
     out.gain.cancelScheduledValues(t);
@@ -126,9 +180,9 @@ export class AudioGraph {
   /** Restore full bass on every deck (mix finished or cancelled). */
   resetBass(): void {
     const t = this.ctx.currentTime;
-    for (const f of this.decks.values()) {
-      f.gain.cancelScheduledValues(t);
-      f.gain.setTargetAtTime(0, t, 0.03);
+    for (const { bass } of this.decks.values()) {
+      bass.gain.cancelScheduledValues(t);
+      bass.gain.setTargetAtTime(0, t, 0.03);
     }
   }
 
@@ -178,6 +232,75 @@ export class AudioGraph {
     const ctx = this.ctx as unknown as SinkCapable;
     if (!ctx.setSinkId) return Promise.resolve();
     return ctx.setSinkId(deviceId);
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Half a second of 8 kHz mono silence as a WAV blob URL. */
+function silentClipUrl(): string {
+  const rate = 8000;
+  const samples = rate / 2;
+  const buf = new ArrayBuffer(44 + samples * 2);
+  const v = new DataView(buf);
+  const tag = (at: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(at + i, s.charCodeAt(i));
+  };
+  tag(0, "RIFF");
+  v.setUint32(4, 36 + samples * 2, true);
+  tag(8, "WAVE");
+  tag(12, "fmt ");
+  v.setUint32(16, 16, true); // fmt chunk size
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true); // byte rate
+  v.setUint16(32, 2, true); // block align
+  v.setUint16(34, 16, true); // bits per sample
+  tag(36, "data");
+  v.setUint32(40, samples * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
+/**
+ * Linux only: run just before the graph's AudioContext is created.
+ *
+ * WebKitGTK gives every playing element and every AudioContext its own
+ * PipeWire stream under the app's name, and applies an element's volume
+ * and mute to its stream. WirePlumber remembers the last volume and mute
+ * per app and hands them to each new stream. So the context's stream
+ * starts at whatever an element last had (muted, if the player was
+ * muted; near silent at a low slider; or a stale value from an earlier
+ * session) and keeps it, since nothing in the page can reach that stream.
+ * That is how switching the equaliser on could make the app go silent.
+ *
+ * Playing a silent clip at full volume, unmuted, makes that the
+ * remembered state, so the context's stream starts at unity and the
+ * faders do the rest. The clip starts at half volume, muted, and is then
+ * raised because WebKit only writes volume and mute to the stream when
+ * they change.
+ */
+export async function primeOutputStream(): Promise<void> {
+  const url = silentClipUrl();
+  const el = new Audio(url);
+  el.loop = true;
+  el.volume = 0.5;
+  el.muted = true;
+  try {
+    await el.play();
+    await sleep(100);
+    el.volume = 1;
+    el.muted = false;
+    // Give WirePlumber a moment to store it before the context's
+    // stream appears.
+    await sleep(200);
+  } catch {
+    // Nothing to prime with: build the graph anyway.
+  } finally {
+    el.pause();
+    el.removeAttribute("src");
+    el.load();
+    URL.revokeObjectURL(url);
   }
 }
 
