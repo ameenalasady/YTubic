@@ -27,6 +27,8 @@ use tower_http::services::ServeFile;
 mod appid;
 mod discord;
 #[cfg(target_os = "linux")]
+mod linux_audio;
+#[cfg(target_os = "linux")]
 mod linux_graphics;
 mod media;
 mod progressive;
@@ -3839,6 +3841,10 @@ pub fn run() {
     // No-op outside Linux; respects an explicit compositor preference.
     #[cfg(target_os = "linux")]
     linux_graphics::configure();
+    // Likewise environment only: the bundled GStreamer sink that keeps the
+    // equaliser audible on Bluetooth, and no WirePlumber volume restore.
+    #[cfg(target_os = "linux")]
+    linux_audio::configure();
 
     // Register + pin the app's Windows identity (AppUserModelID) so the SMTC
     // media tile (and notifications, taskbar) resolve to "YTubic" + icon rather

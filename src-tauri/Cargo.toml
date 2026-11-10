@@ -17,6 +17,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Finds the C compiler for the Linux GStreamer sink plugin (build.rs).
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }

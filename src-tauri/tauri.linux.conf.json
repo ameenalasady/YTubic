@@ -11,7 +11,10 @@
           "gstreamer1.0-plugins-base",
           "gstreamer1.0-plugins-good",
           "gstreamer1.0-libav"
-        ]
+        ],
+        "files": {
+          "/usr/lib/ytubic/gstreamer-1.0/libgstytubicsink.so": "gen/gst-plugin/libgstytubicsink.so"
+        }
       },
       "rpm": {
         "depends": [
@@ -19,7 +22,15 @@
           "gtk3",
           "gstreamer1-plugins-base",
           "gstreamer1-plugins-good"
-        ]
+        ],
+        "files": {
+          "/usr/lib/ytubic/gstreamer-1.0/libgstytubicsink.so": "gen/gst-plugin/libgstytubicsink.so"
+        }
+      },
+      "appimage": {
+        "files": {
+          "/usr/lib/ytubic/gstreamer-1.0/libgstytubicsink.so": "gen/gst-plugin/libgstytubicsink.so"
+        }
       }
     }
   }

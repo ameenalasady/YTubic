@@ -7,10 +7,15 @@ import { EQ_BANDS } from "@/lib/store/playback-settings";
  *     -> [compressor] -> destination
  *
  * Built lazily by the audio engine the first time the equaliser, mono,
- * normalisation or a non-default output device is switched on. Once an
- * element is attached through `createMediaElementSource` it can never be
- * detached, so the graph is a one-way door: everything after that plays
- * through here, and every stage is transparent while its setting is off.
+ * normalisation or a non-default output device is switched on. An element
+ * attached through `createMediaElementSource` can never be detached, so
+ * when all of those are off again the engine closes the graph and moves
+ * playback to a fresh pair of elements (see `close`). Every stage is
+ * transparent while its setting is off.
+ *
+ * On Linux the context's output relies on the bundled GStreamer sink
+ * (src-tauri/gst-plugin): with WebKitGTK's stock pulsesink it plays pure
+ * silence on high-latency outputs such as Bluetooth headphones.
  *
  * The elements must load their stream with `crossOrigin="anonymous"` and
  * the stream server must answer with CORS headers (it does, through the
@@ -227,80 +232,18 @@ export class AudioGraph {
     }
   }
 
+  /** Stop rendering for good. The attached elements stay tied to this
+   *  context and go silent with it, so they must not be used again. */
+  close(): Promise<void> {
+    this.decks.clear();
+    return this.ctx.close().catch(() => {});
+  }
+
   /** Move the whole context to an output device; "" is the default. */
   setSinkId(deviceId: string): Promise<void> {
     const ctx = this.ctx as unknown as SinkCapable;
     if (!ctx.setSinkId) return Promise.resolve();
     return ctx.setSinkId(deviceId);
-  }
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Half a second of 8 kHz mono silence as a WAV blob URL. */
-function silentClipUrl(): string {
-  const rate = 8000;
-  const samples = rate / 2;
-  const buf = new ArrayBuffer(44 + samples * 2);
-  const v = new DataView(buf);
-  const tag = (at: number, s: string) => {
-    for (let i = 0; i < s.length; i++) v.setUint8(at + i, s.charCodeAt(i));
-  };
-  tag(0, "RIFF");
-  v.setUint32(4, 36 + samples * 2, true);
-  tag(8, "WAVE");
-  tag(12, "fmt ");
-  v.setUint32(16, 16, true); // fmt chunk size
-  v.setUint16(20, 1, true); // PCM
-  v.setUint16(22, 1, true); // mono
-  v.setUint32(24, rate, true);
-  v.setUint32(28, rate * 2, true); // byte rate
-  v.setUint16(32, 2, true); // block align
-  v.setUint16(34, 16, true); // bits per sample
-  tag(36, "data");
-  v.setUint32(40, samples * 2, true);
-  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
-}
-
-/**
- * Linux only: run just before the graph's AudioContext is created.
- *
- * WebKitGTK gives every playing element and every AudioContext its own
- * PipeWire stream under the app's name, and applies an element's volume
- * and mute to its stream. WirePlumber remembers the last volume and mute
- * per app and hands them to each new stream. So the context's stream
- * starts at whatever an element last had (muted, if the player was
- * muted; near silent at a low slider; or a stale value from an earlier
- * session) and keeps it, since nothing in the page can reach that stream.
- * That is how switching the equaliser on could make the app go silent.
- *
- * Playing a silent clip at full volume, unmuted, makes that the
- * remembered state, so the context's stream starts at unity and the
- * faders do the rest. The clip starts at half volume, muted, and is then
- * raised because WebKit only writes volume and mute to the stream when
- * they change.
- */
-export async function primeOutputStream(): Promise<void> {
-  const url = silentClipUrl();
-  const el = new Audio(url);
-  el.loop = true;
-  el.volume = 0.5;
-  el.muted = true;
-  try {
-    await el.play();
-    await sleep(100);
-    el.volume = 1;
-    el.muted = false;
-    // Give WirePlumber a moment to store it before the context's
-    // stream appears.
-    await sleep(200);
-  } catch {
-    // Nothing to prime with: build the graph anyway.
-  } finally {
-    el.pause();
-    el.removeAttribute("src");
-    el.load();
-    URL.revokeObjectURL(url);
   }
 }
 

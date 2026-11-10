@@ -7103,6 +7103,7 @@ dependencies = [
  "aes-gcm",
  "axum",
  "base64 0.22.1",
+ "cc",
  "cookie",
  "discord-rich-presence",
  "futures-util",
