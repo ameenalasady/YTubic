@@ -63,6 +63,13 @@ type State = {
   fullscreenVideo: boolean;
   /** Picture height for the immersive Video mode. */
   videoQuality: VideoQuality;
+  /** Linux: see the desktop through the window (blurred by the
+   *  compositor, if it does that). The window is always created
+   *  transparent there; this only sets the fill's alpha
+   *  (see `hooks/use-window-glass.ts`). Ignored on other platforms. */
+  transparentWindow: boolean;
+  /** Fill opacity while `transparentWindow` is on, 50-100 (%). */
+  windowOpacity: number;
   setCloseAction: (v: CloseButtonAction) => void;
   setCacheAutoClean: (v: CacheAutoCleanPeriod) => void;
   markCacheCleaned: () => void;
@@ -78,6 +85,8 @@ type State = {
   setWindowGlowSize: (v: number) => void;
   setFullscreenVideo: (v: boolean) => void;
   setVideoQuality: (v: VideoQuality) => void;
+  setTransparentWindow: (v: boolean) => void;
+  setWindowOpacity: (v: number) => void;
 };
 
 /**
@@ -104,6 +113,8 @@ export const useSettingsStore = create<State>()(
       windowGlowSize: 50,
       fullscreenVideo: false,
       videoQuality: 720,
+      transparentWindow: true,
+      windowOpacity: 80,
       setCloseAction: (closeAction) => set({ closeAction }),
       setCacheAutoClean: (cacheAutoClean) => set({ cacheAutoClean }),
       markCacheCleaned: () => set({ lastCacheCleanAt: Date.now() }),
@@ -121,6 +132,9 @@ export const useSettingsStore = create<State>()(
       setVideoQuality: (videoQuality) => set({ videoQuality }),
       setWindowGlowSize: (v) =>
         set({ windowGlowSize: Math.min(100, Math.max(10, Math.round(v))) }),
+      setTransparentWindow: (transparentWindow) => set({ transparentWindow }),
+      setWindowOpacity: (v) =>
+        set({ windowOpacity: Math.min(100, Math.max(50, Math.round(v))) }),
     }),
     { name: "ytm-settings" },
   ),

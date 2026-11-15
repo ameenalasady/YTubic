@@ -137,7 +137,7 @@ export function WindowGlow() {
   return (
     <div
       aria-hidden="true"
-      className="window-glow pointer-events-none absolute inset-0 z-[60] rounded-[8px] transition-opacity duration-300"
+      className="window-glow pointer-events-none absolute inset-0 z-[60] rounded-[var(--window-radius,8px)] transition-opacity duration-300"
       style={
         {
           opacity: focused ? 1 : 0.35,

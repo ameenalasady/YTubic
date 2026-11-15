@@ -1,4 +1,5 @@
 import type { IntegrationPage, SettingsTab } from "@/lib/store/settings-dialog";
+import { IS_LINUX } from "@/lib/platform";
 
 /** Fewest characters before the search starts ("more than 2 letters"). */
 export const MIN_QUERY_LENGTH = 3;
@@ -13,6 +14,8 @@ export type SettingEntry = {
   page?: IntegrationPage;
   /** DOM id the row carries (`data-setting`); defaults to the title's slug. */
   id?: string;
+  /** The row only renders on Linux, so other platforms don't search it. */
+  linuxOnly?: boolean;
 };
 
 export const settingSlug = (title: string): string =>
@@ -138,6 +141,21 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     description:
       "Tint the window with the current album art, or keep it plain.",
     keywords: "cover colour color blur",
+  },
+  {
+    tab: "appearance",
+    title: "Transparent window",
+    description:
+      "Let the desktop show through the window. Your compositor can blur it.",
+    keywords: "glass translucent see-through blur kwin",
+    linuxOnly: true,
+  },
+  {
+    tab: "appearance",
+    title: "Window opacity",
+    description: "How solid the window background is.",
+    keywords: "transparency translucent glass alpha slider",
+    linuxOnly: true,
   },
   {
     tab: "appearance",
@@ -345,6 +363,7 @@ export function searchSettings(
 
   const out: SettingMatch[] = [];
   SETTINGS_INDEX.forEach((entry, order) => {
+    if (entry.linuxOnly && !IS_LINUX) return;
     const title = entry.title.toLowerCase();
     const desc = entry.description.toLowerCase();
     const extra =

@@ -1474,7 +1474,7 @@ async fn open_player_window(
     // + gap (12) + controls (~48) + p-3 bottom (12) ≈ 558. Lyrics
     // and the bottom button row sit below and graciously collapse
     // (lyrics is `flex-1 min-h-0`) when there isn't room.
-    let win = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         &app,
         "player",
         WebviewUrl::App("index.html?floating-player=1".into()),
@@ -1484,18 +1484,26 @@ async fn open_player_window(
     .inner_size(360.0, 720.0)
     .min_inner_size(320.0, 560.0)
     .resizable(true)
-    .skip_taskbar(false)
-    // Tauri's default drag/drop handler swallows in-page HTML5 drag
-    // events on WebView2, breaking the queue reorder. We don't
-    // accept dropped files anywhere in the app, so disabling the
-    // handler entirely is purely upside. The doc string for this
-    // method literally calls out HTML5 DnD on Windows as the use case.
-    .disable_drag_drop_handler()
-    // Shares the default user-data folder with the main window, so the
-    // args must match the main window's `additionalBrowserArgs` exactly.
-    .additional_browser_args(APP_WEBVIEW_ARGS)
-    .build()
-    .map_err(|e| e.to_string())?;
+    .skip_taskbar(false);
+    // Linux: the window is always created transparent and the page
+    // paints its own fill, whose alpha follows the "Transparent window"
+    // setting (see `use-window-glass.ts`). Transparency can't be
+    // switched after creation, so the toggle lives entirely in CSS.
+    // Same as the main window's `tauri.linux.conf.json`.
+    #[cfg(target_os = "linux")]
+    let builder = builder.transparent(true);
+    let win = builder
+        // Tauri's default drag/drop handler swallows in-page HTML5 drag
+        // events on WebView2, breaking the queue reorder. We don't
+        // accept dropped files anywhere in the app, so disabling the
+        // handler entirely is purely upside. The doc string for this
+        // method literally calls out HTML5 DnD on Windows as the use case.
+        .disable_drag_drop_handler()
+        // Shares the default user-data folder with the main window, so the
+        // args must match the main window's `additionalBrowserArgs` exactly.
+        .additional_browser_args(APP_WEBVIEW_ARGS)
+        .build()
+        .map_err(|e| e.to_string())?;
     // Dev builds: orange taskbar icon, same as the main window.
     #[cfg(debug_assertions)]
     let _ = win.set_icon(runtime_icon(&app));

@@ -1,6 +1,7 @@
 import { useTheme } from "next-themes";
 import {
   IconAppWindowFilled,
+  IconBlur,
   IconCheck,
   IconChevronDown,
   IconHeart,
@@ -25,6 +26,7 @@ import { Slider } from "@/components/ui/slider";
 import { Group, SettingRow, TabPane } from "@/components/settings/primitives";
 import { INTERFACE_FONTS, interfaceFontStack } from "@/lib/interface-font";
 import { cn } from "@/lib/utils";
+import { IS_LINUX } from "@/lib/platform";
 import { useLayoutStore, type LayoutMode } from "@/lib/store/layout";
 import {
   useSettingsStore,
@@ -74,6 +76,10 @@ export function AppearanceTab() {
   const setWindowGlowCover = useSettingsStore((s) => s.setWindowGlowCover);
   const windowGlowSize = useSettingsStore((s) => s.windowGlowSize);
   const setWindowGlowSize = useSettingsStore((s) => s.setWindowGlowSize);
+  const transparentWindow = useSettingsStore((s) => s.transparentWindow);
+  const setTransparentWindow = useSettingsStore((s) => s.setTransparentWindow);
+  const windowOpacity = useSettingsStore((s) => s.windowOpacity);
+  const setWindowOpacity = useSettingsStore((s) => s.setWindowOpacity);
   const videoQuality = useSettingsStore((s) => s.videoQuality);
   const setVideoQuality = useSettingsStore((s) => s.setVideoQuality);
 
@@ -110,6 +116,41 @@ export function AppearanceTab() {
             />
           }
         />
+        {/* Linux only: the window is created transparent there
+            (src/lib/window-glass.ts). Blur comes from the compositor. */}
+        {IS_LINUX && (
+          <>
+            <SettingRow
+              icon={IconBlur}
+              title="Transparent window"
+              description="Let the desktop show through the window. Your compositor can blur it."
+              control={
+                <Switch
+                  checked={transparentWindow}
+                  onCheckedChange={setTransparentWindow}
+                  aria-label="Transparent window"
+                />
+              }
+            />
+            <SettingRow
+              icon={IconBlur}
+              title="Window opacity"
+              description="How solid the window background is."
+              control={
+                <Slider
+                  value={[windowOpacity]}
+                  onValueChange={([v]) => setWindowOpacity(v)}
+                  min={50}
+                  max={100}
+                  step={5}
+                  disabled={!transparentWindow}
+                  aria-label="Window opacity"
+                  className="w-[150px]"
+                />
+              }
+            />
+          </>
+        )}
         <SettingRow
           icon={IconSparkles}
           title="Window glow"

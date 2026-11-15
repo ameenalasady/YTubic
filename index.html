@@ -24,6 +24,24 @@
           document.documentElement.classList.add("dark");
         }
       })();
+      // Linux glass window: apply the persisted "Transparent window"
+      // setting before first paint. Mirrors useWindowGlass() in
+      // src/lib/window-glass.ts, which takes over once React mounts.
+      (function () {
+        try {
+          if (
+            !/Linux/i.test(navigator.platform) ||
+            /Android/i.test(navigator.userAgent)
+          )
+            return;
+          var raw = localStorage.getItem("ytm-settings");
+          var s = (raw && JSON.parse(raw).state) || {};
+          if (s.transparentWindow === false) return;
+          var o = typeof s.windowOpacity === "number" ? s.windowOpacity : 80;
+          document.documentElement.setAttribute("data-glass", "");
+          document.documentElement.style.setProperty("--win-alpha", o / 100);
+        } catch (_) {}
+      })();
     </script>
   </head>
 

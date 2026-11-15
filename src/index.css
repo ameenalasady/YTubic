@@ -9,6 +9,18 @@
      instead of overlapping the window-control buttons. */
   --titlebar-h: 36px;
 
+  /* Window fill. Opaque everywhere except a Linux window with the
+     "Transparent window" setting on, where `--win-alpha` is set on
+     <html> (src/lib/window-glass.ts) and the desktop shows through.
+     Resolved on <html>, which also carries .dark, so it follows the
+     theme's --background. */
+  --win-alpha: 1;
+  --win-fill: color-mix(
+    in srgb,
+    var(--background) calc(var(--win-alpha) * 100%),
+    transparent
+  );
+
   /* YouTube brand red. Same value as the design system's --acc1. */
   --brand: #fa1f4b;
   --brand-rgb: 250, 31, 75;
@@ -526,6 +538,26 @@
   }
   body {
     @apply overflow-hidden select-none;
+  }
+
+  /* Linux glass window (see src/lib/window-glass.ts). The page roots go
+     clear and the app shell paints `--win-fill` instead, so there is a
+     single translucent layer under the UI, as with the ambient cover.
+     Rounded corners while floating; the clip on <body> also rounds the
+     portaled dialogs and the fixed fullscreen player. */
+  html[data-glass],
+  html[data-glass] body,
+  html[data-glass] #root {
+    background: transparent;
+  }
+  html[data-glass] {
+    --window-radius: 10px;
+  }
+  html[data-glass][data-win-square] {
+    --window-radius: 0px;
+  }
+  html[data-glass]:not([data-win-square]) body {
+    clip-path: inset(0 round var(--window-radius));
   }
 
   /* The Settings dialog is the one place selection stays useful (e.g.

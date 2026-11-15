@@ -19,6 +19,7 @@ import {
 import { initFloatingTrackSourceBridge } from "@/lib/store/track-source";
 import { useLayoutStore } from "@/lib/store/layout";
 import { useSettingsStore } from "@/lib/store/settings";
+import { useWindowGlass } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
 import { PERSIST_MAX_AGE, persister, queryClient } from "@/lib/query-client";
 
@@ -42,6 +43,7 @@ export default function FloatingPlayerApp() {
   // cross-window `storage` listener in the settings store keeps it
   // live when toggled over there.
   const background = useSettingsStore((s) => s.background);
+  useWindowGlass();
   // Read the main window's persisted query cache once, so the liked
   // list (7+ continuation round-trips when fetched cold) is there
   // before the heart first renders. Restore only: subscribing would
@@ -78,7 +80,7 @@ export default function FloatingPlayerApp() {
           is hydrated from disk once above, read-only. */}
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={800} skipDelayDuration={0}>
-          <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
+          <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-(--win-fill)">
             {background === "ambient" && <FloatingBackgroundCover />}
             <FloatingPlayerSyncReceiver />
             <FloatingTitleBar />

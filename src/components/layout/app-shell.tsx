@@ -19,6 +19,7 @@ import { FloatingPlayerSync } from "@/components/layout/floating-player-sync";
 import { DragSnapOverlay } from "@/components/layout/drag-snap-overlay";
 import { WindowResizeHandles } from "@/components/layout/window-resize-handles";
 import { WindowGlow } from "@/components/layout/window-glow";
+import { useWindowGlass } from "@/lib/window-glass";
 import { IS_MAC } from "@/lib/platform";
 import { EntityPageHeader } from "@/components/layout/entity-page-header";
 import { useEntityHeaderStore } from "@/lib/store/entity-header";
@@ -138,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   useDiscordPresenceSync();
   useCacheAutoClean();
   usePlaybackNotifications();
+  useWindowGlass();
   useLastfmScrobbler();
   const mode = useLayoutStore((s) => s.mode);
   const settingsOpen = useSettingsDialog((s) => s.open);
@@ -258,7 +260,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           } as React.CSSProperties
         }
       >
-        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-(--win-fill)">
           {background === "ambient" && <BackgroundCover />}
           {/* Custom title bar spans the full window width so the
               Windows-style min/max/close buttons land in the actual

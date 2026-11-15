@@ -1,5 +1,21 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "title": "YTubic",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "center": true,
+        "dragDropEnabled": false
+      }
+    ]
+  },
   "bundle": {
     "targets": ["deb", "rpm", "appimage"],
     "category": "Music",
