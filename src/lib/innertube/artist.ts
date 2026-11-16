@@ -27,12 +27,21 @@ function readWatchTarget(button: YtNode | undefined): WatchTarget | undefined {
 export async function fetchArtist(id: string): Promise<ArtistPage> {
   const json = await rawBrowse(id);
 
+  // Artists use the immersive header; a plain channel (an uploader of
+  // remixes or slowed versions, with no albums or singles) comes back with
+  // the visual header instead, which carries the same title / thumbnail /
+  // subscribe-button fields.
   const header =
     json?.header?.musicImmersiveHeaderRenderer ??
     json?.header?.musicDetailHeaderRenderer ??
+    json?.header?.musicVisualHeaderRenderer ??
     {};
 
-  const name = readRuns(header.title);
+  // The page title is the last resort for the name, so a header shape we
+  // do not know still opens as a named page.
+  const name =
+    readRuns(header.title) ||
+    readRuns(json?.microformat?.microformatDataRenderer?.title);
   const description = readRuns(header.description);
   const subscribeButton =
     header.subscriptionButton?.subscribeButtonRenderer ?? {};

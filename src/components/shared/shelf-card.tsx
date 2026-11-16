@@ -64,6 +64,9 @@ import type { ShelfItem } from "@/lib/innertube/types";
 type Props = {
   item: ShelfItem;
   className?: string;
+  /** Show the thumbnail as 16:9 whatever the item is (songs are square by
+   *  default). Used by the cards view of video lists. */
+  wide?: boolean;
 };
 
 // Per-category icons for Moods & Genres tiles. The InnerTube payload only
@@ -138,7 +141,7 @@ function pickCategoryIcon(title: string): TablerIcon {
 const CARD_CLASS =
   "group flex w-full flex-col gap-2 rounded-lg p-2 text-left transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:outline-none";
 
-export function ShelfCard({ item, className }: Props) {
+export function ShelfCard({ item, className, wide: forceWide }: Props) {
   const subtitle =
     item.subtitle ??
     item.artists?.map((a) => a.name).join(", ") ??
@@ -146,6 +149,8 @@ export function ShelfCard({ item, className }: Props) {
     "";
 
   const isVideo = item.kind === "video";
+  // 16:9 for videos, and for anything a cards view asks to be wide.
+  const wide = isVideo || !!forceWide;
   // Entity artwork shares the rounded-square treatment of its detail
   // header; song/video thumbnails keep the tighter default corners.
   const isEntity =
@@ -190,7 +195,7 @@ export function ShelfCard({ item, className }: Props) {
       <div
         className={cn(
           "relative w-full",
-          isVideo ? "aspect-video" : "aspect-square",
+          wide ? "aspect-video" : "aspect-square",
         )}
       >
         {isLiked ? (
@@ -200,7 +205,7 @@ export function ShelfCard({ item, className }: Props) {
             thumbnails={item.thumbnails}
             alt={item.title}
             className={cn("size-full", radiusClass)}
-            targetSize={isVideo ? 480 : 256}
+            targetSize={wide ? 480 : 256}
             highRes
           />
         )}
@@ -211,7 +216,7 @@ export function ShelfCard({ item, className }: Props) {
             radiusClass,
           )}
         />
-        {isVideo && item.duration ? (
+        {wide && item.duration ? (
           // No backdrop-blur: WebKitGTK re-blurs a backdrop-filter every
           // scroll frame, so a shelf of these tanks the page.
           <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-black/65 px-1.5 py-1 text-[11px] font-medium leading-none text-white">

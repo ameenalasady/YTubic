@@ -93,15 +93,22 @@ describe("classifyAllRow", () => {
     expect(r?.item.kind).toBe("playlist");
   });
 
+  it('maps a plain channel ("Profile") to the artist page', () => {
+    // An uploader of remixes / slowed versions has no albums or singles and
+    // is not a YT Music artist, but its channel page opens fine as one.
+    const r = classifyAllRow(
+      row("Profile", {
+        browseId: "UC_p",
+        pageType: "MUSIC_PAGE_TYPE_USER_CHANNEL",
+      }),
+    );
+    expect(r?.group).toBe("artist");
+    expect(r?.item.kind).toBe("artist");
+    expect(r?.item.id).toBe("UC_p");
+    expect(r?.item.round).toBe(true);
+  });
+
   it("skips types the app has no destination for", () => {
-    expect(
-      classifyAllRow(
-        row("Profile", {
-          browseId: "UC_p",
-          pageType: "MUSIC_PAGE_TYPE_USER_CHANNEL",
-        }),
-      ),
-    ).toBeNull();
     expect(
       classifyAllRow(
         row("Episode", {

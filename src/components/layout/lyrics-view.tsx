@@ -1,7 +1,20 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { IconRefresh } from "@tabler/icons-react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { motion } from "motion/react";
+import { toast } from "sonner";
 import { IconMicrophoneFilled } from "@tabler/icons-react";
 import { playerIconButton } from "@/components/layout/player-chrome";
+import { LyricsReloadButton } from "@/components/layout/lyrics-reload-button";
+import {
+  resolveActiveSource,
+  type LyricsOverride,
+} from "@/lib/lyrics/active-source";
 // Fork note: IconCheck from upstream's menu restyle is omitted for now —
 // this port keeps fork's lyrics on/off toggle + radio group. It will return
 // with the shared menu-chrome port (869f271). RotateCw/MicVocal (Lucide)
@@ -79,10 +92,33 @@ export type LyricsViewState = {
   setEnabled: (v: boolean) => void;
   /** Sources that failed to answer at all. */
   failed: LyricsSource[];
-  /** A retry is in flight. */
-  isRetrying: boolean;
-  retryFailed: () => void;
+  /** Re-fetch this track's lyrics from LRCLIB and show them. Sources that
+   *  failed to answer are retried alongside. */
+  reload: () => void;
+  /** A reload is in flight. */
+  reloading: boolean;
+  /** Counts finished reloads that brought new lyrics, so the panel can play
+   *  its entrance animation for exactly those. */
+  reloadCount: number;
 };
+
+/** One line saying what went wrong, including the underlying cause that a
+ *  transport error carries, so a failed reload is diagnosable on screen. */
+function describeError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  const cause = (e as { cause?: unknown }).cause;
+  const why =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : "";
+  return why ? `${e.message} (${why})` : e.message;
+}
+
+/** The reload spins at least this long, so a fast answer still reads as a
+ *  deliberate action and the entrance does not flash in under the spinner. */
+const MIN_RELOAD_MS = 650;
 
 /**
  * Drives the inline lyrics panel: fires queries to all three sources,
@@ -102,7 +138,11 @@ export type LyricsViewState = {
  */
 export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
   const [pref, setPrefState] = useState<Pref>(loadPref);
+  // Set by "Reload lyrics": pins this track to the LRCLIB copy it just
+  // fetched. Dropped when the user picks a source themselves.
+  const [override, setOverride] = useState<LyricsOverride | null>(null);
   const setPref = (p: Pref) => {
+    setOverride(null);
     setPrefState(p);
     savePref(p);
   };
@@ -110,8 +150,10 @@ export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
   const enabled = useSettingsStore((s) => s.lyricsEnabled);
   const setEnabled = useSettingsStore((s) => s.setLyricsEnabled);
 
-  const { queries, best, isLoading, failed, isRetrying, retryFailed } =
-    useLyricsSources(track, !!track && enabled);
+  const { queries, best, isLoading, failed } = useLyricsSources(
+    track,
+    !!track && enabled,
+  );
 
   const availability = useMemo(() => {
     const acc = {} as Record<LyricsSource, Availability>;
@@ -130,8 +172,61 @@ export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
     return acc;
   }, [queries]);
 
-  const activeSource: LyricsSource | null = pref === "auto" ? best : pref;
+  const activeSource = resolveActiveSource({
+    pref,
+    best,
+    override,
+    videoId: track?.videoId,
+    hasLyrics: (s) => !!queries[s].data,
+  });
   const active = activeSource ? (queries[activeSource].data ?? null) : null;
+
+  const [reloading, setReloading] = useState(false);
+  const [reloadCount, setReloadCount] = useState(0);
+  const reloadingRef = useRef(false);
+  const trackIdRef = useRef(track?.videoId);
+  useEffect(() => {
+    trackIdRef.current = track?.videoId;
+  }, [track?.videoId]);
+  const refetchLrclib = queries.lrclib.refetch;
+
+  const reload = useCallback(async () => {
+    const videoId = track?.videoId;
+    if (!videoId || reloadingRef.current) return;
+    reloadingRef.current = true;
+    setReloading(true);
+    try {
+      // `refetch` always goes to the network, whatever the cache holds. A
+      // source that failed to answer is tried again in the same go, which
+      // is what the old "Try again" button did. The minimum delay only
+      // keeps a fast answer from flickering.
+      const retryOthers = failed
+        .filter((s) => s !== "lrclib")
+        .map((s) => queries[s].refetch());
+      const [result] = await Promise.all([
+        refetchLrclib(),
+        new Promise((r) => setTimeout(r, MIN_RELOAD_MS)),
+        ...retryOthers,
+      ]);
+      // The track changed while this was in flight: the answer belongs to
+      // the old one, so show nothing and say nothing.
+      if (trackIdRef.current !== videoId) return;
+      if (result.isError) {
+        console.error("[lyrics] LRCLIB reload failed:", result.error);
+        toast.error("Couldn't reach LRCLIB", {
+          description: describeError(result.error),
+        });
+      } else if (!result.data) {
+        toast.info("LRCLIB has no lyrics for this track");
+      } else {
+        setOverride({ videoId, source: "lrclib" });
+        setReloadCount((n) => n + 1);
+      }
+    } finally {
+      reloadingRef.current = false;
+      setReloading(false);
+    }
+  }, [track?.videoId, refetchLrclib, failed, queries]);
 
   return {
     active,
@@ -144,8 +239,9 @@ export function useLyricsView(track: QueueTrack | undefined): LyricsViewState {
     enabled,
     setEnabled,
     failed,
-    isRetrying,
-    retryFailed,
+    reload: () => void reload(),
+    reloading,
+    reloadCount,
   };
 }
 
@@ -159,6 +255,34 @@ export function LyricsBody({
 }) {
   if (!state.hasTrack) return null;
   if (!state.enabled) return null;
+  return (
+    <div className="relative flex h-full min-h-0 flex-1 flex-col">
+      {/* A fresh key per finished reload remounts the column, which both
+          restarts its scroll position on the active line and replays the
+          entrance. While a reload is running the old lyrics step back.
+          Opacity and a translate only: both stay on the compositor, and
+          the animation (and its layer) ends with the transition. */}
+      <motion.div
+        key={state.reloadCount}
+        className="flex h-full min-h-0 flex-1 flex-col"
+        initial={state.reloadCount > 0 ? { opacity: 0, y: 18 } : false}
+        animate={{ opacity: state.reloading ? 0.4 : 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
+      >
+        <LyricsContent state={state} large={large} />
+      </motion.div>
+      <LyricsReloadButton reloading={state.reloading} onReload={state.reload} />
+    </div>
+  );
+}
+
+function LyricsContent({
+  state,
+  large,
+}: {
+  state: LyricsViewState;
+  large: boolean;
+}) {
   if (state.isLoading && !state.active) {
     return (
       <p className="px-4 py-2 text-sm text-muted-foreground">Loading lyrics…</p>
@@ -166,25 +290,16 @@ export function LyricsBody({
   }
   if (!state.active) {
     // A source that never answered is not a track without lyrics. Say which
-    // it was and offer another go, rather than the flat "No lyrics found."
-    // that used to cover both and then sat in the disk cache for 24h.
+    // it was, rather than the flat "No lyrics found." that used to cover
+    // both and then sat in the disk cache for 24h. The reload button in the
+    // corner is the way to try again.
     if (state.failed.length > 0) {
       return (
-        <div className="flex flex-col items-start gap-2 px-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Couldn&apos;t reach{" "}
-            {state.failed.map((s) => SOURCE_LABELS[s]).join(", ")}.
-          </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={state.retryFailed}
-            disabled={state.isRetrying}
-          >
-            <IconRefresh className={state.isRetrying ? "animate-spin" : ""} />
-            {state.isRetrying ? "Trying…" : "Try again"}
-          </Button>
-        </div>
+        <p className="px-4 py-2 text-sm text-muted-foreground">
+          Couldn&apos;t reach{" "}
+          {state.failed.map((s) => SOURCE_LABELS[s]).join(", ")}. Use the reload
+          button to try again.
+        </p>
       );
     }
     return (

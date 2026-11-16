@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mapShelfWrapper, splitSetCookieHeader, type YtNode } from "./shared";
+import {
+  isArtistPageType,
+  mapPlaylistPanelVideo,
+  mapShelfWrapper,
+  pageTypeToKind,
+  splitSetCookieHeader,
+  type YtNode,
+} from "./shared";
 
 // Fallback splitter for runtimes without Headers.getSetCookie. The
 // tricky part is NOT splitting on the comma inside an Expires date.
@@ -122,5 +129,69 @@ describe("mapShelfWrapper more endpoint", () => {
       },
     };
     expect(mapShelfWrapper(wrapper, 0).more).toBeUndefined();
+  });
+});
+
+// A channel that only uploads videos (remixes, slowed versions, covers) has
+// no artist page of its own on YT Music: its runs point at a USER_CHANNEL
+// browse page. Those names used to render as inert text.
+describe("channels count as artists", () => {
+  const nav = (browseId: string, pageType: string) => ({
+    browseEndpoint: {
+      browseId,
+      browseEndpointContextSupportedConfigs: {
+        browseEndpointContextMusicConfig: { pageType },
+      },
+    },
+  });
+
+  it("recognises artist and channel page types, and nothing else", () => {
+    expect(isArtistPageType("MUSIC_PAGE_TYPE_ARTIST")).toBe(true);
+    expect(isArtistPageType("MUSIC_PAGE_TYPE_USER_CHANNEL")).toBe(true);
+    expect(isArtistPageType("MUSIC_PAGE_TYPE_ALBUM")).toBe(false);
+    expect(isArtistPageType("MUSIC_PAGE_TYPE_PLAYLIST")).toBe(false);
+    expect(isArtistPageType("")).toBe(false);
+    expect(isArtistPageType(undefined)).toBe(false);
+  });
+
+  it("maps a channel page to the artist kind", () => {
+    expect(pageTypeToKind("MUSIC_PAGE_TYPE_USER_CHANNEL")).toBe("artist");
+    expect(pageTypeToKind("MUSIC_PAGE_TYPE_ARTIST")).toBe("artist");
+    expect(pageTypeToKind("MUSIC_PAGE_TYPE_ALBUM")).toBe("album");
+  });
+
+  it("links the uploader in a video's byline", () => {
+    const item = mapPlaylistPanelVideo({
+      navigationEndpoint: { watchEndpoint: { videoId: "vid1" } },
+      title: { runs: [{ text: "drowned (slowed + reverb)" }] },
+      longBylineText: {
+        runs: [
+          {
+            text: "TheGoldenYami",
+            navigationEndpoint: nav("UCchan", "MUSIC_PAGE_TYPE_USER_CHANNEL"),
+          },
+          { text: " • " },
+          { text: "10K views" },
+        ],
+      },
+    });
+    expect(item?.artists).toEqual([{ id: "UCchan", name: "TheGoldenYami" }]);
+    expect(item?.subtitle).toBe("TheGoldenYami");
+  });
+
+  it("still links a real artist the same way", () => {
+    const item = mapPlaylistPanelVideo({
+      navigationEndpoint: { watchEndpoint: { videoId: "vid2" } },
+      title: { runs: [{ text: "Song" }] },
+      longBylineText: {
+        runs: [
+          {
+            text: "Some Artist",
+            navigationEndpoint: nav("UCart", "MUSIC_PAGE_TYPE_ARTIST"),
+          },
+        ],
+      },
+    });
+    expect(item?.artists).toEqual([{ id: "UCart", name: "Some Artist" }]);
   });
 });

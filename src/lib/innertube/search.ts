@@ -70,6 +70,9 @@ const TOKEN_TO_GROUP: Record<string, SearchGroup> = {
   Single: "album",
   EP: "album",
   Artist: "artist",
+  // A channel that is not an artist (only videos, remixes, slowed versions)
+  // is labelled "Profile". It opens on the artist page like any artist.
+  Profile: "artist",
   Playlist: "playlist",
 };
 

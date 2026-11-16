@@ -2,6 +2,7 @@ import type { AlbumPage, MinimalArtist, ShelfItem } from "./types";
 import { parseTrackCount } from "./parse-count";
 import {
   collectResponsiveRows,
+  isArtistPageType,
   mapResponsiveListItem,
   rawBrowse,
   readRuns,
@@ -60,7 +61,7 @@ export async function fetchAlbum(id: string): Promise<AlbumPage> {
     const pageType = run.navigationEndpoint?.browseEndpoint
       ?.browseEndpointContextSupportedConfigs
       ?.browseEndpointContextMusicConfig?.pageType as string | undefined;
-    if (browseId && pageType?.includes("ARTIST")) {
+    if (browseId && isArtistPageType(pageType)) {
       artists.push({ id: browseId, name: run.text ?? "" });
     } else {
       const text = (run.text ?? "").trim();

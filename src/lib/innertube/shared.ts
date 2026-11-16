@@ -522,7 +522,7 @@ export function mapPlaylistPanelVideo(raw: YtNode): ShelfItem | null {
     const pageType = run.navigationEndpoint?.browseEndpoint
       ?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig
       ?.pageType as string | undefined;
-    if (browseId && pageType?.includes("ARTIST")) {
+    if (browseId && isArtistPageType(pageType)) {
       artists.push({ id: browseId, name: run.text ?? "" });
     } else if (browseId && pageType?.includes("ALBUM")) {
       album = run.text ?? album;
@@ -672,8 +672,24 @@ export function parseDuration(text: string): number | undefined {
   return undefined;
 }
 
+/**
+ * Whether a browse page type is something the app opens on the artist page.
+ *
+ * Real artists are `MUSIC_PAGE_TYPE_ARTIST`. Plain channels (an uploader of
+ * remixes, slowed versions, covers... with no albums or singles) are
+ * `MUSIC_PAGE_TYPE_USER_CHANNEL`: their browse page has the same shape (a
+ * header and shelves of videos and playlists), so the artist page can show
+ * them, and without this their names were left as inert text.
+ */
+export function isArtistPageType(pageType: string | undefined): boolean {
+  return (
+    !!pageType &&
+    (pageType.includes("ARTIST") || pageType.includes("USER_CHANNEL"))
+  );
+}
+
 export function pageTypeToKind(pageType: string): ShelfItem["kind"] | null {
-  if (pageType.includes("ARTIST")) return "artist";
+  if (isArtistPageType(pageType)) return "artist";
   if (pageType.includes("ALBUM")) return "album";
   if (pageType.includes("PLAYLIST") || pageType.includes("PODCAST_SHOW"))
     return "playlist";
@@ -747,7 +763,7 @@ export function mapTwoRowItem(raw: YtNode): ShelfItem | null {
     const pageType = run.navigationEndpoint?.browseEndpoint
       ?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig
       ?.pageType as string | undefined;
-    if (browseId && pageType?.includes("ARTIST")) {
+    if (browseId && isArtistPageType(pageType)) {
       artists.push({ id: browseId, name: run.text ?? "" });
     } else if (browseId && pageType?.includes("ALBUM")) {
       album = run.text ?? album;
@@ -865,7 +881,7 @@ export function mapResponsiveListItem(raw: YtNode): ShelfItem | null {
       const pageType = nav?.browseEndpoint
         ?.browseEndpointContextSupportedConfigs
         ?.browseEndpointContextMusicConfig?.pageType as string | undefined;
-      if (browseId && pageType?.includes("ARTIST")) {
+      if (browseId && isArtistPageType(pageType)) {
         artists.push({ id: browseId, name: run.text ?? "" });
         hadNav = true;
       } else if (browseId && pageType?.includes("ALBUM")) {

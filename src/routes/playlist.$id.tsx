@@ -2,11 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
-  IconChevronDown,
   IconLoader2,
   IconSearch,
   IconShare3,
-  IconSortDescending,
   IconX,
 } from "@tabler/icons-react";
 import {
@@ -28,15 +26,6 @@ import { TrackRowSkeletonList } from "@/components/shared/skeletons";
 import { EntityHeaderSkeleton } from "@/components/layout/entity-page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { usePlaybackStore } from "@/lib/store/playback";
 import { copyLink } from "@/lib/clipboard";
 import { universalShareUrl } from "@/lib/deep-link";
@@ -45,6 +34,11 @@ import {
   type PlaylistSortMode,
 } from "@/lib/store/playlist-sort";
 import { ErrorCard } from "@/components/shared/error-card";
+import { useVideosViewStore } from "@/lib/store/videos-view";
+import { sortTracks } from "@/lib/sort-tracks";
+import { SortMenu } from "@/components/shared/sort-menu";
+import { CardGrid, ViewMenu } from "@/components/shared/view-menu";
+import { ShelfCard } from "@/components/shared/shelf-card";
 
 export const Route = createFileRoute("/playlist/$id")({
   component: PlaylistPageView,
@@ -91,6 +85,15 @@ function PlaylistPageView() {
     (s) => s.modes[id] ?? ("default" as PlaylistSortMode),
   );
   const setSortMode = usePlaylistSortStore((s) => s.setMode);
+
+  // List / cards, for the video lists an artist page opens. Everything else
+  // (playlists, Liked songs, top songs) stays a list.
+  const showViewMenu = openedFromArtist && !isArtistTopSongs;
+  const savedLayout = useVideosViewStore((s) => s.layout);
+  const cardSize = useVideosViewStore((s) => s.size);
+  const setLayout = useVideosViewStore((s) => s.setLayout);
+  const setCardSize = useVideosViewStore((s) => s.setSize);
+  const layout = showViewMenu ? (savedLayout ?? "list") : "list";
 
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -327,6 +330,17 @@ function PlaylistPageView() {
               onChange={(m) => setSortMode(id, m)}
               isLikedSongs={isLikedSongs}
             />
+            {showViewMenu ? (
+              <ViewMenu
+                layout={layout}
+                size={cardSize}
+                onLayout={setLayout}
+                onSize={(size) => {
+                  setCardSize(size);
+                  setLayout("cards");
+                }}
+              />
+            ) : null}
           </div>
         ) : null}
         {(sortMode !== "default" || normalizedQuery) && query.hasNextPage ? (
@@ -339,12 +353,24 @@ function PlaylistPageView() {
         ) : null}
       </div>
 
-      <JumpToCurrentButton tracks={visibleTracks} />
+      {layout === "list" ? (
+        <JumpToCurrentButton tracks={visibleTracks} />
+      ) : null}
 
       {normalizedQuery && visibleTracks.length === 0 && !query.hasNextPage ? (
         <div className="py-6 text-center text-sm text-muted-foreground">
           No tracks match “{searchQuery.trim()}”.
         </div>
+      ) : layout === "cards" ? (
+        <CardGrid size={cardSize}>
+          {visibleTracks.map((track) => (
+            <ShelfCard
+              key={`${track.kind}:${track.id}`}
+              item={track}
+              wide
+            />
+          ))}
+        </CardGrid>
       ) : (
         <TrackList tracks={visibleTracks} showPlays={isArtistTopSongs} />
       )}
@@ -407,48 +433,6 @@ function playCountValue(text?: string): number {
   return value * multiplier;
 }
 
-function sortTracks(tracks: ShelfItem[], mode: PlaylistSortMode): ShelfItem[] {
-  if (mode === "default" || tracks.length < 2) return tracks;
-  const copy = tracks.slice();
-  switch (mode) {
-    case "date-added-asc":
-      // YT serves Liked / user playlists newest-first. We don't have
-      // a parseable timestamp on each row (the visible string is
-      // localized — "Apr 23", "Yesterday", etc.), but a simple reverse
-      // gives correct oldest-first order.
-      copy.reverse();
-      break;
-    case "title-asc":
-      copy.sort((a, b) => a.title.localeCompare(b.title));
-      break;
-    case "title-desc":
-      copy.sort((a, b) => b.title.localeCompare(a.title));
-      break;
-    case "artist-asc": {
-      const key = (t: ShelfItem) => t.artists?.[0]?.name ?? t.subtitle ?? "";
-      copy.sort((a, b) => key(a).localeCompare(key(b)));
-      break;
-    }
-    case "duration-asc":
-      copy.sort((a, b) => (a.duration ?? 0) - (b.duration ?? 0));
-      break;
-    case "duration-desc":
-      copy.sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
-      break;
-  }
-  return copy;
-}
-
-const SORT_LABELS: Record<PlaylistSortMode, string> = {
-  default: "Date added (newest)",
-  "date-added-asc": "Date added (oldest)",
-  "title-asc": "Title (A–Z)",
-  "title-desc": "Title (Z–A)",
-  "artist-asc": "Artist (A–Z)",
-  "duration-asc": "Duration (shortest)",
-  "duration-desc": "Duration (longest)",
-};
-
 function SearchInput({
   value,
   onChange,
@@ -480,56 +464,6 @@ function SearchInput({
         </button>
       ) : null}
     </div>
-  );
-}
-
-function SortMenu({
-  mode,
-  onChange,
-  isLikedSongs,
-}: {
-  mode: PlaylistSortMode;
-  onChange: (m: PlaylistSortMode) => void;
-  isLikedSongs: boolean;
-}) {
-  const options: PlaylistSortMode[] = [
-    "default",
-    "date-added-asc",
-    "title-asc",
-    "title-desc",
-    "artist-asc",
-    "duration-asc",
-    "duration-desc",
-  ];
-  // Non-Liked playlists have a server-defined order that isn't always
-  // chronological — relabel "default" to something accurate.
-  const labelFor = (m: PlaylistSortMode) =>
-    m === "default" && !isLikedSongs ? "Default order" : SORT_LABELS[m];
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <IconSortDescending />
-          {labelFor(mode)}
-          <IconChevronDown className="opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-56">
-        <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuRadioGroup
-          value={mode}
-          onValueChange={(v) => onChange(v as PlaylistSortMode)}
-        >
-          {options.map((m) => (
-            <DropdownMenuRadioItem key={m} value={m}>
-              {labelFor(m)}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
