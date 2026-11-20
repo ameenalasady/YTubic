@@ -5,6 +5,12 @@ import App from "./App";
 import "./index.css";
 // Applies the Interface font setting to <html> in both windows.
 import "./lib/interface-font";
+import { installSystemThemeBridge } from "./lib/system-theme";
+
+// Must run before React renders: next-themes resolves "system" from
+// window.matchMedia, which this replaces on Linux with the value from the
+// XDG settings portal (see src-tauri/src/system_theme.rs).
+installSystemThemeBridge();
 
 // Suppress the WebView2 / Chromium native right-click menu (Back,
 // Refresh, Save as, Inspect, …). Our Radix ContextMenu triggers run

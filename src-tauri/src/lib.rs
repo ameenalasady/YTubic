@@ -34,6 +34,8 @@ mod media;
 mod progressive;
 #[cfg(target_os = "linux")]
 mod mpris;
+#[cfg(target_os = "linux")]
+mod system_theme;
 // Taskbar thumbnail toolbar (prev / play-pause / next under the taskbar
 // preview). Windows-only shell surface; see src/thumbbar.rs.
 #[cfg(windows)]
@@ -1353,6 +1355,25 @@ async fn probe_session(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// Current desktop color scheme from the XDG settings portal. Linux only
+/// needs the bridge: elsewhere the webview's media query is authoritative
+/// and this returns `None`. See `system_theme.rs`.
+#[tauri::command]
+async fn system_color_scheme() -> Option<&'static str> {
+    #[cfg(target_os = "linux")]
+    {
+        // `read` is a blocking D-Bus call; keep it off the async workers.
+        tauri::async_runtime::spawn_blocking(system_theme::read)
+            .await
+            .ok()
+            .flatten()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
 }
 
 /// What the title-bar ✕ does, mirrored from the frontend settings store
@@ -3927,6 +3948,7 @@ pub fn run() {
             cover_cache_stats,
             clear_cover_cache,
             quit_app,
+            system_color_scheme,
             set_close_behavior,
             autostart_set,
             autostart_is_enabled,
@@ -4041,6 +4063,12 @@ pub fn run() {
             if let Err(e) = build_tray(app.handle()) {
                 eprintln!("[tray] build failed: {e}");
             }
+
+            // Linux: feed the XDG portal's color scheme to the webview's
+            // `prefers-color-scheme`, which WebKitGTK otherwise derives
+            // from the GTK theme alone. No-op on other platforms.
+            #[cfg(target_os = "linux")]
+            system_theme::init(app.handle());
 
             // WebKitGTK ships with smooth (kinetic) scrolling OFF by default,
             // so wheel scrolling jumps in coarse line-height steps and feels

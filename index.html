@@ -11,13 +11,29 @@
       // ThemeProvider config in src/App.tsx (storageKey, default).
       (function () {
         try {
-          var t = localStorage.getItem("ytm-theme") || "dark";
-          var resolved =
-            t === "system"
-              ? window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light"
-              : t;
+          var t = localStorage.getItem("ytm-theme") || "system";
+          var resolved;
+          if (t === "system") {
+            // Linux: prefer the XDG portal value cached by
+            // src/lib/system-theme.ts. WebKitGTK's own query follows the
+            // GTK theme and can disagree with the desktop's dark mode.
+            var cached = null;
+            if (
+              /Linux/i.test(navigator.platform) &&
+              !/Android/i.test(navigator.userAgent)
+            ) {
+              cached = localStorage.getItem("ytm-system-color-scheme");
+            }
+            var dark =
+              cached === "dark"
+                ? true
+                : cached === "light"
+                  ? false
+                  : window.matchMedia("(prefers-color-scheme: dark)").matches;
+            resolved = dark ? "dark" : "light";
+          } else {
+            resolved = t;
+          }
           document.documentElement.classList.add(resolved);
           document.documentElement.style.colorScheme = resolved;
         } catch (_) {
