@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { IS_WINDOWS } from "@/lib/platform";
 
 type ResizeDirection =
   | "North"
@@ -36,9 +37,6 @@ const HANDLES: { direction: ResizeDirection; className: string }[] = [
   },
 ];
 
-const isWindows =
-  typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
-
 /**
  * Frameless WebKit windows do not have the invisible native resize border that
  * WebView2 provides on Windows, so Linux and the frameless macOS mini-player
@@ -49,7 +47,7 @@ export function WindowResizeHandles({
 }: {
   disabled?: boolean;
 }) {
-  if (disabled || isWindows) return null;
+  if (disabled || IS_WINDOWS) return null;
 
   return (
     <>
