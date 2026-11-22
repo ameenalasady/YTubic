@@ -14,20 +14,15 @@
           var t = localStorage.getItem("ytm-theme") || "system";
           var resolved;
           if (t === "system") {
-            // Linux: prefer the XDG portal value cached by
-            // src/lib/system-theme.ts. WebKitGTK's own query follows the
-            // GTK theme and can disagree with the desktop's dark mode.
-            var cached = null;
-            if (
-              /Linux/i.test(navigator.platform) &&
-              !/Android/i.test(navigator.userAgent)
-            ) {
-              cached = localStorage.getItem("ytm-system-color-scheme");
-            }
+            // Linux: src-tauri/src/system_theme.rs injects the XDG portal's
+            // answer at document start, before this script. Absent means the
+            // portal had not answered when the window was built, so fall back
+            // to the webview's own query.
+            var injected = window.__ytubicColorScheme;
             var dark =
-              cached === "dark"
+              injected === "dark"
                 ? true
-                : cached === "light"
+                : injected === "light"
                   ? false
                   : window.matchMedia("(prefers-color-scheme: dark)").matches;
             resolved = dark ? "dark" : "light";

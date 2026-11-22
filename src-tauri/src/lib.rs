@@ -1360,10 +1360,20 @@ fn quit_app(app: tauri::AppHandle) {
 /// Current desktop color scheme from the XDG settings portal. Linux only
 /// needs the bridge: elsewhere the webview's media query is authoritative
 /// and this returns `None`. See `system_theme.rs`.
+///
+/// The first paint does not use this: the windows are built with the value
+/// inlined as an init script. That script is a constant, so it says nothing
+/// about a page reloaded after the desktop theme changed; hence the
+/// frontend asks here once per load, and this answers from what the watcher
+/// has published (`system_theme::current`), which is the live value. Only a
+/// portal that has still not answered costs a blocking read.
 #[tauri::command]
 async fn system_color_scheme() -> Option<&'static str> {
     #[cfg(target_os = "linux")]
     {
+        if let Some(scheme) = system_theme::current() {
+            return Some(scheme);
+        }
         // `read` is a blocking D-Bus call; keep it off the async workers.
         tauri::async_runtime::spawn_blocking(system_theme::read)
             .await
@@ -1374,6 +1384,43 @@ async fn system_color_scheme() -> Option<&'static str> {
     {
         None
     }
+}
+
+/// Document-start script carrying the desktop's color scheme, for the main
+/// window. Linux only; elsewhere the webview's `prefers-color-scheme` is
+/// already correct and nothing is injected.
+#[cfg(target_os = "linux")]
+fn main_theme_script(app: &tauri::AppHandle) -> Option<&'static str> {
+    system_theme::start(app)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn main_theme_script(_app: &tauri::AppHandle) -> Option<&'static str> {
+    None
+}
+
+/// Create the main window from its `tauri.conf.json` entry, which sets
+/// `"create": false`. The window must not exist before
+/// `main_theme_script` has an answer, otherwise the page paints its theme
+/// guess and corrects it afterwards.
+fn create_main_window(
+    app: &tauri::AppHandle,
+    theme_script: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+        .ok_or("tauri.conf.json has no `main` window")?;
+    let mut builder = WebviewWindowBuilder::from_config(app, &config)?;
+    if let Some(script) = theme_script {
+        builder = builder.initialization_script(script);
+    }
+    builder.build()?;
+    Ok(())
 }
 
 /// What the title-bar ✕ does, mirrored from the frontend settings store
@@ -1513,6 +1560,13 @@ async fn open_player_window(
     // Same as the main window's `tauri.linux.conf.json`.
     #[cfg(target_os = "linux")]
     let builder = builder.transparent(true);
+    // Linux: same document-start theme hint as the main window, with the
+    // value current at creation time (`system_theme` keeps it updated).
+    #[cfg(target_os = "linux")]
+    let builder = match system_theme::init_script() {
+        Some(script) => builder.initialization_script(script),
+        None => builder,
+    };
     let win = builder
         // Tauri's default drag/drop handler swallows in-page HTML5 drag
         // events on WebView2, breaking the queue reorder. We don't
@@ -3997,6 +4051,12 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // Linux: the main window is created here, not by the builder,
+            // so the desktop's color scheme is known before its first
+            // paint. Every other platform gets `None` and the webview's
+            // own `prefers-color-scheme`.
+            create_main_window(app.handle(), main_theme_script(app.handle()))?;
+
             let port = port_handle.clone();
             let token = token_handle.clone();
             // User-chosen cache root (Settings → Storage) or the OS
@@ -4063,12 +4123,6 @@ pub fn run() {
             if let Err(e) = build_tray(app.handle()) {
                 eprintln!("[tray] build failed: {e}");
             }
-
-            // Linux: feed the XDG portal's color scheme to the webview's
-            // `prefers-color-scheme`, which WebKitGTK otherwise derives
-            // from the GTK theme alone. No-op on other platforms.
-            #[cfg(target_os = "linux")]
-            system_theme::init(app.handle());
 
             // WebKitGTK ships with smooth (kinetic) scrolling OFF by default,
             // so wheel scrolling jumps in coarse line-height steps and feels
@@ -4326,5 +4380,28 @@ mod tests {
         assert!(!changed, "same value must not invalidate the header cache");
         assert!(dirty, "but the fresher expiry should be written");
         assert!(out.contains(&format!("{}", NOW + 31_536_000)));
+    }
+
+    /// Every platform config replaces `app.windows` wholesale (JSON Merge
+    /// Patch, no per-index merge), so `"create": false` has to be repeated
+    /// in each of them. Without it the builder creates the main window
+    /// itself and `create_main_window` then fails on the duplicate label.
+    #[test]
+    fn main_window_is_created_manually_on_every_target() {
+        use tauri::utils::config::{parse::read_from, Config};
+        use tauri::utils::platform::Target;
+
+        for target in [Target::Windows, Target::MacOS, Target::Linux] {
+            let (value, _) =
+                read_from(target, std::path::Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+            let config: Config = serde_json::from_value(value).unwrap();
+            let main = config
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == "main")
+                .unwrap_or_else(|| panic!("{target:?} has no main window"));
+            assert!(!main.create, "{target:?} must set create: false");
+        }
     }
 }
