@@ -11,13 +11,24 @@
       // ThemeProvider config in src/App.tsx (storageKey, default).
       (function () {
         try {
-          var t = localStorage.getItem("ytm-theme") || "dark";
-          var resolved =
-            t === "system"
-              ? window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light"
-              : t;
+          var t = localStorage.getItem("ytm-theme") || "system";
+          var resolved;
+          if (t === "system") {
+            // Linux: src-tauri/src/system_theme.rs injects the XDG portal's
+            // answer at document start, before this script. Absent means the
+            // portal had not answered when the window was built, so fall back
+            // to the webview's own query.
+            var injected = window.__ytubicColorScheme;
+            var dark =
+              injected === "dark"
+                ? true
+                : injected === "light"
+                  ? false
+                  : window.matchMedia("(prefers-color-scheme: dark)").matches;
+            resolved = dark ? "dark" : "light";
+          } else {
+            resolved = t;
+          }
           document.documentElement.classList.add(resolved);
           document.documentElement.style.colorScheme = resolved;
         } catch (_) {
@@ -29,11 +40,9 @@
       // src/lib/window-glass.ts, which takes over once React mounts.
       (function () {
         try {
-          if (
-            !/Linux/i.test(navigator.platform) ||
-            /Android/i.test(navigator.userAgent)
-          )
-            return;
+          // The platform is substituted at build time by Vite; see the
+          // `define` in vite.config.ts.
+          if ("%TAURI_ENV_PLATFORM%" !== "linux") return;
           var raw = localStorage.getItem("ytm-settings");
           var s = (raw && JSON.parse(raw).state) || {};
           if (s.transparentWindow === false) return;

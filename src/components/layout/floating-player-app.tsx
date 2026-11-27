@@ -68,7 +68,7 @@ export default function FloatingPlayerApp() {
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="dark"
+      defaultTheme="system"
       enableSystem
       storageKey="ytm-theme"
       disableTransitionOnChange
